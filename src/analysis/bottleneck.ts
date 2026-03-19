@@ -2,7 +2,7 @@
 import type { Profile } from '../model/types.js';
 import {
   getAllSpans, buildSpanIndex, getSpanAncestry, computeSelfCost, valuesToRecord, extractKind,
-  getSpanSourceLocation, type SourceLocation,
+  getSpanSourceLocation, getSourceLocation, aggregateSamplesByFrame, type SourceLocation,
 } from './query.js';
 
 export interface BottleneckInput {
@@ -40,6 +40,13 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
   for (const span of allSpans) {
     totalCost += (computeSelfCost(profile, span, spanIndex)[dimIndex] ?? 0);
   }
+
+  // Include sample self-cost in totalCost
+  const frameStats = aggregateSamplesByFrame(profile);
+  for (const fs of frameStats) {
+    totalCost += fs.self_cost[dimIndex] ?? 0;
+  }
+
   if (totalCost === 0) return { dimension: dim, entries: [] };
 
   const entries: BottleneckEntry[] = [];
@@ -64,6 +71,33 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
       impact_score: Math.round(impactScore * 100) / 100,
       pct_of_total: Math.round(pctOfTotal * 100) / 100,
       recommendation: generateRecommendation(frameName, pctOfTotal, source?.ref),
+    });
+  }
+
+  // Add sample-based entries
+  const spanEntryNames = new Set(entries.map(e => e.name));
+  for (const fs of frameStats) {
+    const selfVal = fs.self_cost[dimIndex] ?? 0;
+    if (selfVal <= 0) continue;
+
+    // Don't duplicate if this frame was already counted from spans
+    if (spanEntryNames.has(fs.name)) continue;
+
+    const pctOfTotal = (selfVal / totalCost) * 100;
+    const impactScore = selfVal * (selfVal / totalCost);
+
+    const source = getSourceLocation(profile, fs.frame_index);
+    entries.push({
+      span_id: `frame:${fs.frame_index}`,
+      name: fs.name,
+      kind: extractKind(fs.name),
+      source,
+      ancestry: [fs.name],
+      self_cost: valuesToRecord(profile, fs.self_cost),
+      total_cost: valuesToRecord(profile, fs.total_cost),
+      impact_score: Math.round(impactScore * 100) / 100,
+      pct_of_total: Math.round(pctOfTotal * 100) / 100,
+      recommendation: generateRecommendation(fs.name, pctOfTotal, source?.ref),
     });
   }
 

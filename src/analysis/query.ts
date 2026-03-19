@@ -126,6 +126,57 @@ export function getSpanSourceLocation(profile: Profile, span: Span): SourceLocat
   return getSourceLocation(profile, span.frame_index);
 }
 
+export interface FrameStats {
+  frame_index: number;
+  name: string;
+  self_cost: number[];  // aligned to value_types
+  total_cost: number[]; // aligned to value_types
+  sample_count: number;
+}
+
+/** Aggregate samples into per-frame statistics. */
+export function aggregateSamplesByFrame(profile: Profile): FrameStats[] {
+  const statsMap = new Map<number, { self: number[]; total: number[]; count: number }>();
+  const vtLen = profile.value_types.length;
+
+  for (const lane of profile.lanes) {
+    for (const sample of lane.samples) {
+      for (let i = 0; i < sample.stack.length; i++) {
+        const frameIdx = sample.stack[i];
+        let entry = statsMap.get(frameIdx);
+        if (!entry) {
+          entry = { self: new Array<number>(vtLen).fill(0), total: new Array<number>(vtLen).fill(0), count: 0 };
+          statsMap.set(frameIdx, entry);
+        }
+        // Total: every frame in the stack gets the sample's values
+        for (let v = 0; v < vtLen; v++) {
+          entry.total[v] += sample.values[v] ?? 0;
+        }
+        // Self: only the leaf (last frame in stack) gets self-cost
+        if (i === sample.stack.length - 1) {
+          for (let v = 0; v < vtLen; v++) {
+            entry.self[v] += sample.values[v] ?? 0;
+          }
+          entry.count++;
+        }
+      }
+    }
+  }
+
+  const result: FrameStats[] = [];
+  for (const [frameIdx, entry] of statsMap) {
+    const frame = profile.frames[frameIdx] as Frame | undefined;
+    result.push({
+      frame_index: frameIdx,
+      name: frame?.name ?? `<unknown ${frameIdx}>`,
+      self_cost: entry.self,
+      total_cost: entry.total,
+      sample_count: entry.count,
+    });
+  }
+  return result;
+}
+
 export function valuesToRecord(
   profile: Profile,
   values: number[],

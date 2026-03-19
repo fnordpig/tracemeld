@@ -59,6 +59,17 @@ export function profileSummary(
     if (span.error) errorCount++;
   }
 
+  // Include samples in totals
+  let sampleCount = 0;
+  for (const lane of profile.lanes) {
+    for (const sample of lane.samples) {
+      sampleCount++;
+      for (let i = 0; i < totalValues.length; i++) {
+        totalValues[i] += sample.values[i] ?? 0;
+      }
+    }
+  }
+
   const totals = valuesToRecord(profile, totalValues);
 
   // Group spans
@@ -81,6 +92,29 @@ export function profileSummary(
     }
     group.spanCount++;
     if (span.error) group.errorCount++;
+  }
+
+  // Include samples in groups
+  for (const lane of profile.lanes) {
+    for (const sample of lane.samples) {
+      const leafFrameIdx = sample.stack[sample.stack.length - 1];
+      const leafFrame = profile.frames[leafFrameIdx] as Frame | undefined;
+      const frameName = leafFrame?.name ?? '<unknown>';
+      const key = groupBy === 'lane'
+        ? lane.name
+        : groupBy === 'kind'
+          ? extractKind(frameName)
+          : 'no-turn'; // samples don't have turn structure
+      let group = groups.get(key);
+      if (!group) {
+        group = { values: new Array<number>(profile.value_types.length).fill(0), spanCount: 0, errorCount: 0 };
+        groups.set(key, group);
+      }
+      for (let i = 0; i < group.values.length; i++) {
+        group.values[i] += sample.values[i] ?? 0;
+      }
+      group.spanCount++;
+    }
   }
 
   // Build group results with percentages and investigation flags
@@ -147,7 +181,7 @@ export function profileSummary(
   return {
     totals,
     groups: groupResults,
-    span_count: spans.length,
+    span_count: spans.length + sampleCount,
     error_count: errorCount,
     wall_duration_ms: wallDuration,
     active_duration_ms: wallDuration - idleDuration,
