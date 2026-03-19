@@ -1,5 +1,6 @@
 // src/importers/import.test.ts
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { importProfile } from './import.js';
 import { ProfileBuilder } from '../model/profile.js';
 
@@ -45,5 +46,12 @@ describe('importProfile', () => {
     const content = 'main;foo 10\n';
     const result = importProfile(content, 'test.txt');
     expect(result.value_types).toContain('weight');
+  });
+
+  it('auto-detects and imports gecko profile', () => {
+    const content = readFileSync('fixtures/gecko/simple.json', 'utf-8');
+    const result = importProfile(content, 'gecko-profile.json');
+    expect(result.format_detected).toBe('gecko');
+    expect(result.samples_added).toBeGreaterThan(0);
   });
 });

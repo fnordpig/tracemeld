@@ -3,6 +3,8 @@ import type { ImportFormat, ImportedProfile } from './types.js';
 import { detectFormat } from './detect.js';
 import { importCollapsed } from './collapsed.js';
 import { importChromeTrace } from './chrome-trace.js';
+import { importGecko } from './gecko.js';
+import { importPprof } from './pprof.js';
 import { ProfileBuilder } from '../model/profile.js';
 
 export interface ImportProfileResult {
@@ -60,7 +62,9 @@ function runImporter(content: string, name: string, format: ImportFormat): Impor
     case 'chrome_trace':
       return importChromeTrace(content, name);
     case 'gecko':
+      return importGecko(content, name);
     case 'pprof':
+      return importPprof(content, name);
     case 'speedscope':
       throw new Error(`Format '${format}' is not yet implemented`);
     default:
