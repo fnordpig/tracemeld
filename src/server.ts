@@ -147,12 +147,14 @@ export function createServer(): McpServer {
     },
     (args) => {
       let content: string;
+      const format = args.format ?? 'auto';
       if (!args.source.includes('\n') && existsSync(args.source)) {
-        content = readFileSync(args.source, 'utf-8');
+        // Binary formats (pprof) must be read as latin1 to preserve bytes
+        const isBinary = format === 'pprof' || args.source.endsWith('.pb.gz') || args.source.endsWith('.prof');
+        content = readFileSync(args.source, isBinary ? 'latin1' : 'utf-8');
       } else {
         content = args.source;
       }
-      const format = args.format ?? 'auto';
       const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder);
       state.invalidatePatternCache();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };

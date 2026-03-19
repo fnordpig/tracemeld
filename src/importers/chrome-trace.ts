@@ -9,6 +9,7 @@ interface TraceEvent {
   cat?: string;
   ts?: number;
   dur?: number;
+  tdur?: number;
   pid?: number;
   tid?: number;
   s?: string;
@@ -28,7 +29,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
   }
 
   const frameTable = new FrameTable();
-  const lanesMap = new Map<string, { lane: Lane; openSpans: Map<string, Span> }>();
+  const lanesMap = new Map<string, { lane: Lane; openSpans: Map<string, Span[]> }>();
   let spanIdCounter = 0;
 
   // First pass: collect M (metadata) events for lane names
@@ -48,7 +49,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
     }
   }
 
-  function getOrCreateLane(pid: number, tid: number): { lane: Lane; openSpans: Map<string, Span> } {
+  function getOrCreateLane(pid: number, tid: number): { lane: Lane; openSpans: Map<string, Span[]> } {
     const key = `${pid}:${tid}`;
     let entry = lanesMap.get(key);
     if (!entry) {
@@ -63,7 +64,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
         spans: [],
         markers: [],
       };
-      entry = { lane, openSpans: new Map() };
+      entry = { lane, openSpans: new Map<string, Span[]>() };
       lanesMap.set(key, entry);
     }
     return entry;
@@ -79,7 +80,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
         const { lane } = getOrCreateLane(pid, tid);
         const frameIdx = frameTable.getOrInsert({ name: event.name ?? '<unknown>' });
         const startMs = (event.ts ?? 0) / 1000;
-        const durMs = (event.dur ?? 0) / 1000;
+        const durMs = (event.dur ?? event.tdur ?? 0) / 1000;
         lane.spans.push({
           id: `imp_${spanIdCounter++}`,
           frame_index: frameIdx,
@@ -107,17 +108,29 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
           children: [],
         };
         entry.lane.spans.push(span);
-        entry.openSpans.set(event.name ?? '', span);
+        const eventName = event.name ?? '';
+        let stack = entry.openSpans.get(eventName);
+        if (!stack) {
+          stack = [];
+          entry.openSpans.set(eventName, stack);
+        }
+        stack.push(span);
         break;
       }
       case 'E': {
         const entry = getOrCreateLane(pid, tid);
-        const openSpan = entry.openSpans.get(event.name ?? '');
-        if (openSpan) {
-          const endMs = (event.ts ?? 0) / 1000;
-          openSpan.end_time = endMs;
-          openSpan.values = [endMs - openSpan.start_time];
-          entry.openSpans.delete(event.name ?? '');
+        const eventName = event.name ?? '';
+        const stack = entry.openSpans.get(eventName);
+        if (stack && stack.length > 0) {
+          const openSpan = stack.pop();
+          if (openSpan) {
+            const endMs = (event.ts ?? 0) / 1000;
+            openSpan.end_time = endMs;
+            openSpan.values = [endMs - openSpan.start_time];
+          }
+          if (stack.length === 0) {
+            entry.openSpans.delete(eventName);
+          }
         }
         break;
       }

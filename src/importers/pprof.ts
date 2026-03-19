@@ -100,16 +100,17 @@ class ProtoReader {
     let shift = 0;
     while (this.pos < this.data.length) {
       const byte = this.data[this.pos++];
-      result |= (byte & 0x7f) << shift;
+      // Use multiplication instead of bitwise shift to handle values > 2^28
+      result += (byte & 0x7f) * (2 ** shift);
       if ((byte & 0x80) === 0) break;
       shift += 7;
     }
-    return result >>> 0;
+    return result;
   }
 
   readTag(): { field: number; wireType: number } {
     const v = this.readVarint();
-    return { field: v >>> 3, wireType: v & 0x7 };
+    return { field: Math.floor(v / 8), wireType: v % 8 };
   }
 
   readBytes(): Uint8Array {
