@@ -16,7 +16,23 @@ export function getAllSpans(profile: Profile): Span[] {
   return spans;
 }
 
-export function getSpanById(profile: Profile, spanId: string): Span | undefined {
+/** Build a span lookup index for O(1) access by ID. */
+export function buildSpanIndex(profile: Profile): Map<string, Span> {
+  const index = new Map<string, Span>();
+  for (const lane of profile.lanes) {
+    for (const span of lane.spans) {
+      index.set(span.id, span);
+    }
+  }
+  return index;
+}
+
+export function getSpanById(
+  profile: Profile,
+  spanId: string,
+  index?: Map<string, Span>,
+): Span | undefined {
+  if (index) return index.get(spanId);
   for (const lane of profile.lanes) {
     const span = lane.spans.find((s) => s.id === spanId);
     if (span) return span;
@@ -24,14 +40,18 @@ export function getSpanById(profile: Profile, spanId: string): Span | undefined 
   return undefined;
 }
 
-export function getSpanAncestry(profile: Profile, span: Span): string[] {
+export function getSpanAncestry(
+  profile: Profile,
+  span: Span,
+  index?: Map<string, Span>,
+): string[] {
   const chain: string[] = [];
   let current: Span | undefined = span;
   while (current) {
     const frameName = (profile.frames[current.frame_index] as Frame | undefined)?.name;
     chain.push(frameName ?? `<unknown frame ${current.frame_index}>`);
     if (current.parent_id) {
-      current = getSpanById(profile, current.parent_id);
+      current = getSpanById(profile, current.parent_id, index);
     } else {
       current = undefined;
     }
@@ -40,13 +60,17 @@ export function getSpanAncestry(profile: Profile, span: Span): string[] {
   return chain;
 }
 
-export function computeSelfCost(profile: Profile, span: Span): number[] {
+export function computeSelfCost(
+  profile: Profile,
+  span: Span,
+  index?: Map<string, Span>,
+): number[] {
   if (span.children.length === 0) {
     return [...span.values];
   }
   const selfCost = [...span.values];
   for (const childId of span.children) {
-    const child = getSpanById(profile, childId);
+    const child = getSpanById(profile, childId, index);
     if (!child) continue;
     for (let i = 0; i < selfCost.length; i++) {
       selfCost[i] -= child.values[i] ?? 0;

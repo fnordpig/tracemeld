@@ -1,6 +1,6 @@
 // src/analysis/spinpaths.ts
 import type { Profile } from '../model/types.js';
-import { getAllSpans, getSpanAncestry, computeSelfCost } from './query.js';
+import { getAllSpans, buildSpanIndex, getSpanAncestry, computeSelfCost } from './query.js';
 
 export interface SpinpathsInput {
   min_wall_ms?: number;
@@ -23,6 +23,7 @@ export interface SpinpathsResult {
 export function findSpinpaths(profile: Profile, input: SpinpathsInput): SpinpathsResult {
   const minWallMs = input.min_wall_ms ?? 5000;
   const allSpans = getAllSpans(profile);
+  const spanIndex = buildSpanIndex(profile);
 
   const wallIdx = profile.value_types.findIndex((vt) => vt.key === 'wall_ms');
   const outputIndices = profile.value_types
@@ -32,7 +33,7 @@ export function findSpinpaths(profile: Profile, input: SpinpathsInput): Spinpath
   const entries: SpinpathEntry[] = [];
 
   for (const span of allSpans) {
-    const selfCost = computeSelfCost(profile, span);
+    const selfCost = computeSelfCost(profile, span, spanIndex);
     const wallMs = wallIdx >= 0 ? (selfCost[wallIdx] ?? 0) : 0;
     if (wallMs < minWallMs) continue;
 
@@ -52,7 +53,7 @@ export function findSpinpaths(profile: Profile, input: SpinpathsInput): Spinpath
       entries.push({
         span_id: span.id,
         name: frameName,
-        ancestry: getSpanAncestry(profile, span),
+        ancestry: getSpanAncestry(profile, span, spanIndex),
         wall_ms: wallMs,
         output_produced: outputProduced,
         efficiency_ratio: Math.round(efficiencyRatio * 100) / 100,

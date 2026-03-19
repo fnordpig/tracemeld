@@ -73,6 +73,25 @@ function runImporter(content: string, name: string, format: ImportFormat): Impor
 }
 
 function mergeImportedProfile(builder: ProfileBuilder, imported: ImportedProfile): void {
+  // Reconcile value types: build a mapping from imported indices to builder indices
+  const valueIndexMap = new Map<number, number>();
+  for (let i = 0; i < imported.profile.value_types.length; i++) {
+    const builderIdx = builder.addValueType(imported.profile.value_types[i]);
+    valueIndexMap.set(i, builderIdx);
+  }
+
+  // Remap a values array from imported indices to builder indices
+  function remapValues(importedValues: number[]): number[] {
+    const result = builder.emptyValues();
+    for (let i = 0; i < importedValues.length; i++) {
+      const targetIdx = valueIndexMap.get(i);
+      if (targetIdx !== undefined && targetIdx < result.length) {
+        result[targetIdx] = importedValues[i];
+      }
+    }
+    return result;
+  }
+
   // Re-map frame indices from imported profile to the builder's frame table
   const frameIndexMap = new Map<number, number>();
   for (let i = 0; i < imported.profile.frames.length; i++) {
@@ -80,6 +99,7 @@ function mergeImportedProfile(builder: ProfileBuilder, imported: ImportedProfile
     frameIndexMap.set(i, newIdx);
   }
 
+  // Add lanes with remapped frames and values
   for (const lane of imported.profile.lanes) {
     const newLane = builder.addLane(`imported:${lane.id}`, lane.kind);
     newLane.name = lane.name;
@@ -90,6 +110,7 @@ function mergeImportedProfile(builder: ProfileBuilder, imported: ImportedProfile
       newLane.samples.push({
         ...sample,
         stack: sample.stack.map((idx) => frameIndexMap.get(idx) ?? idx),
+        values: remapValues(sample.values),
       });
     }
 
@@ -97,6 +118,7 @@ function mergeImportedProfile(builder: ProfileBuilder, imported: ImportedProfile
       newLane.spans.push({
         ...span,
         frame_index: frameIndexMap.get(span.frame_index) ?? span.frame_index,
+        values: remapValues(span.values),
       });
     }
 

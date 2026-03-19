@@ -74,6 +74,16 @@ export class ProfileBuilder {
     return this._valueTypeIndex.get(key) ?? -1;
   }
 
+  /** Add a value type if it doesn't already exist. Returns the index. */
+  addValueType(vt: ValueType): number {
+    const existing = this.valueTypeIndex(vt.key);
+    if (existing >= 0) return existing;
+    const idx = this.profile.value_types.length;
+    this.profile.value_types.push(vt);
+    this._valueTypeIndex.set(vt.key, idx);
+    return idx;
+  }
+
   /** Build a zero-filled values array for the current value_types. */
   emptyValues(): number[] {
     return new Array<number>(this.profile.value_types.length).fill(0);

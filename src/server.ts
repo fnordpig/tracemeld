@@ -168,11 +168,12 @@ export function createServer(): McpServer {
         "Export the current profile to a standard format for visualization. Currently supports 'collapsed' (for flamegraph tools). Returns the data as a string or writes to file.",
       inputSchema: {
         format: z.enum(['collapsed']).describe('Export format'),
+        dimension: z.string().optional().describe('Value type key to export (default: first value type)'),
         output_path: z.string().optional().describe('File path to write. If omitted, returns data inline.'),
       },
     },
     (args) => {
-      const data = exportCollapsed(state.builder.profile);
+      const data = exportCollapsed(state.builder.profile, args.dimension ?? 0);
 
       if (args.output_path) {
         writeFileSync(args.output_path, data, 'utf-8');

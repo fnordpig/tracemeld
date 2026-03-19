@@ -167,7 +167,7 @@ describe('MCP Server', () => {
     });
     const result = await c.callTool({
       name: 'export_profile',
-      arguments: { format: 'collapsed' },
+      arguments: { format: 'collapsed', dimension: 'weight' },
     });
     const parsed = parseToolResult(result) as { data: string; size_bytes: number };
     expect(parsed.data).toContain('main;foo;bar 10');

@@ -1,7 +1,7 @@
 // src/analysis/hotpaths.ts
 import type { Profile } from '../model/types.js';
 import {
-  getAllSpans, getSpanAncestry, computeSelfCost, valuesToRecord,
+  getAllSpans, buildSpanIndex, getSpanAncestry, computeSelfCost, valuesToRecord,
   getSpanSourceLocation, getSourceLocation, type SourceLocation,
 } from './query.js';
 
@@ -34,13 +34,14 @@ export function findHotpaths(profile: Profile, input: HotpathsInput): HotpathsRe
 
   // From spans: leaf spans (no children) with their ancestry
   const allSpans = getAllSpans(profile);
+  const spanIndex = buildSpanIndex(profile);
   for (const span of allSpans) {
     if (span.children.length > 0) continue;
-    const selfCost = computeSelfCost(profile, span);
+    const selfCost = computeSelfCost(profile, span, spanIndex);
     const leafCost = selfCost[dimIndex] ?? 0;
     if (leafCost <= 0) continue;
     entries.push({
-      frames: getSpanAncestry(profile, span),
+      frames: getSpanAncestry(profile, span, spanIndex),
       leaf_source: getSpanSourceLocation(profile, span),
       leaf_cost: leafCost,
       path_cost: valuesToRecord(profile, selfCost),

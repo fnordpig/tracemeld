@@ -3,6 +3,7 @@ import type { Frame, Profile, Span, DetectedPattern } from '../model/types.js';
 import type { PatternRegistry } from '../patterns/registry.js';
 import {
   getSpanById,
+  buildSpanIndex,
   getSpanAncestry,
   extractKind,
   valuesToRecord,
@@ -51,7 +52,8 @@ export function explainSpan(
   input: ExplainSpanInput,
   registry?: PatternRegistry,
 ): ExplainSpanResult {
-  const span = getSpanById(profile, input.span_id);
+  const spanIndex = buildSpanIndex(profile);
+  const span = getSpanById(profile, input.span_id, spanIndex);
 
   if (!span) {
     return notFoundResult();
@@ -59,11 +61,11 @@ export function explainSpan(
 
   const frameName = (profile.frames[span.frame_index] as Frame | undefined)?.name ?? '<unknown>';
   const kind = extractKind(frameName);
-  const ancestry = getSpanAncestry(profile, span);
+  const ancestry = getSpanAncestry(profile, span, spanIndex);
   const cost = valuesToRecord(profile, span.values);
 
-  const children = buildChildren(profile, span);
-  const causalChain = buildCausalChain(profile, span);
+  const children = buildChildren(profile, span, spanIndex);
+  const causalChain = buildCausalChain(profile, span, spanIndex);
 
   return {
     span: {
@@ -92,11 +94,12 @@ export function explainSpan(
 function buildChildren(
   profile: Profile,
   parent: Span,
+  index?: Map<string, Span>,
 ): ExplainSpanResult['children'] {
   const children: ExplainSpanResult['children'] = [];
 
   for (const childId of parent.children) {
-    const child = getSpanById(profile, childId);
+    const child = getSpanById(profile, childId, index);
     if (!child) continue;
 
     const childName = (profile.frames[child.frame_index] as Frame | undefined)?.name ?? '<unknown>';
@@ -134,12 +137,13 @@ function buildChildren(
 function buildCausalChain(
   profile: Profile,
   parent: Span,
+  index?: Map<string, Span>,
 ): ExplainSpanResult['causal_chain'] {
   const events: ExplainSpanResult['causal_chain'] = [];
 
   // Add child spans
   for (const childId of parent.children) {
-    const child = getSpanById(profile, childId);
+    const child = getSpanById(profile, childId, index);
     if (!child) continue;
 
     const childName = (profile.frames[child.frame_index] as Frame | undefined)?.name ?? '<unknown>';

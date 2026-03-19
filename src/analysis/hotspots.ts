@@ -3,6 +3,7 @@ import type { Frame, Profile, Span, DetectedPattern } from '../model/types.js';
 import type { PatternRegistry } from '../patterns/registry.js';
 import {
   getAllSpans,
+  buildSpanIndex,
   getSpanAncestry,
   computeSelfCost,
   valuesToRecord,
@@ -43,13 +44,14 @@ export function findHotspots(
   const dim = input.dimension;
   const isErrors = dim === 'errors';
   const spans = getAllSpans(profile);
+  const spanIndex = buildSpanIndex(profile);
 
   const dimIndex = isErrors ? -1 : profile.value_types.findIndex((vt) => vt.key === dim);
 
   const ranked: Array<{ span: Span; selfCost: number[]; rankValue: number }> = [];
 
   for (const span of spans) {
-    const selfCost = computeSelfCost(profile, span);
+    const selfCost = computeSelfCost(profile, span, spanIndex);
     let rankValue: number;
 
     if (isErrors) {
@@ -94,7 +96,7 @@ export function findHotspots(
 
     entries.push({
       span_id: item.span.id,
-      ancestry: getSpanAncestry(profile, item.span),
+      ancestry: getSpanAncestry(profile, item.span, spanIndex),
       name: frameName,
       source,
       total_cost: valuesToRecord(profile, item.span.values),

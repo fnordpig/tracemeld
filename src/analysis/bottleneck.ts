@@ -1,7 +1,7 @@
 // src/analysis/bottleneck.ts
 import type { Profile } from '../model/types.js';
 import {
-  getAllSpans, getSpanAncestry, computeSelfCost, valuesToRecord, extractKind,
+  getAllSpans, buildSpanIndex, getSpanAncestry, computeSelfCost, valuesToRecord, extractKind,
   getSpanSourceLocation, type SourceLocation,
 } from './query.js';
 
@@ -35,15 +35,16 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
   if (dimIndex < 0) return { dimension: dim, entries: [] };
 
   const allSpans = getAllSpans(profile);
+  const spanIndex = buildSpanIndex(profile);
   let totalCost = 0;
   for (const span of allSpans) {
-    totalCost += (computeSelfCost(profile, span)[dimIndex] ?? 0);
+    totalCost += (computeSelfCost(profile, span, spanIndex)[dimIndex] ?? 0);
   }
   if (totalCost === 0) return { dimension: dim, entries: [] };
 
   const entries: BottleneckEntry[] = [];
   for (const span of allSpans) {
-    const selfCost = computeSelfCost(profile, span);
+    const selfCost = computeSelfCost(profile, span, spanIndex);
     const selfVal = selfCost[dimIndex] ?? 0;
     if (selfVal <= 0) continue;
 
@@ -57,7 +58,7 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
       name: frameName,
       kind: extractKind(frameName),
       source,
-      ancestry: getSpanAncestry(profile, span),
+      ancestry: getSpanAncestry(profile, span, spanIndex),
       self_cost: valuesToRecord(profile, selfCost),
       total_cost: valuesToRecord(profile, span.values),
       impact_score: Math.round(impactScore * 100) / 100,

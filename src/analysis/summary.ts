@@ -3,6 +3,7 @@ import type { Frame, Profile, Span } from '../model/types.js';
 import {
   getAllSpans,
   getSpanById,
+  buildSpanIndex,
   extractKind,
   filterSpansByTimeRange,
   valuesToRecord,
@@ -44,13 +45,14 @@ export function profileSummary(
   const groupBy = input.group_by ?? 'kind';
   const allSpans = getAllSpans(profile);
   const spans = filterSpansByTimeRange(allSpans, input.time_range);
+  const spanIndex = buildSpanIndex(profile);
 
   // Compute totals using self-cost to avoid double-counting parent+child values.
   const totalValues = new Array<number>(profile.value_types.length).fill(0);
   let errorCount = 0;
 
   for (const span of spans) {
-    const selfCost = computeSelfCost(profile, span);
+    const selfCost = computeSelfCost(profile, span, spanIndex);
     for (let i = 0; i < totalValues.length; i++) {
       totalValues[i] += selfCost[i] ?? 0;
     }
@@ -63,7 +65,7 @@ export function profileSummary(
   const groups = new Map<string, { values: number[]; spanCount: number; errorCount: number }>();
 
   for (const span of spans) {
-    const key = getGroupKey(profile, span, groupBy);
+    const key = getGroupKey(profile, span, groupBy, spanIndex);
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -73,7 +75,7 @@ export function profileSummary(
       };
       groups.set(key, group);
     }
-    const spanSelfCost = computeSelfCost(profile, span);
+    const spanSelfCost = computeSelfCost(profile, span, spanIndex);
     for (let i = 0; i < group.values.length; i++) {
       group.values[i] += spanSelfCost[i] ?? 0;
     }
@@ -152,7 +154,12 @@ export function profileSummary(
   };
 }
 
-function getGroupKey(profile: Profile, span: Span, groupBy: string): string {
+function getGroupKey(
+  profile: Profile,
+  span: Span,
+  groupBy: string,
+  index?: Map<string, Span>,
+): string {
   const frameName = (profile.frames[span.frame_index] as Frame | undefined)?.name ?? '<unknown>';
   switch (groupBy) {
     case 'kind':
@@ -163,7 +170,7 @@ function getGroupKey(profile: Profile, span: Span, groupBy: string): string {
         const name = (profile.frames[current.frame_index] as Frame | undefined)?.name ?? '';
         if (name.startsWith('turn:')) return name;
         if (!current.parent_id) break;
-        current = getSpanById(profile, current.parent_id);
+        current = getSpanById(profile, current.parent_id, index);
       }
       return 'no-turn';
     }
