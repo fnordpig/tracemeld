@@ -5,7 +5,9 @@
   "type": "module",
   "main": "./build/index.js",
   "types": "./build/index.d.ts",
-  "bin": "./build/cli.js",
+  "bin": {
+    "tracemeld": "./build/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -16,7 +18,10 @@
     "prepublishOnly": "npm run build"
   },
   "files": [
-    "build",
+    "build/**/*.js",
+    "build/**/*.d.ts",
+    "build/**/*.js.map",
+    "!build/**/*.test.*",
     "README.md"
   ],
   "license": "MIT",
