@@ -252,6 +252,79 @@ export function createServer(): McpServer {
     },
   );
 
+  server.registerPrompt(
+    'performance_review',
+    {
+      title: 'Performance Review',
+      description: 'Step-by-step analysis of the current profile. Finds bottlenecks, traces call paths, identifies waste, and produces actionable recommendations with source locations.',
+    },
+    () => ({
+      messages: [{
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text: `You have a performance profile loaded in tracemeld. Analyze it step by step:
+
+1. Call profile_summary with group_by="kind" to get headline numbers.
+2. Look at which group has the highest pct_of_total on any dimension.
+3. Call bottleneck on that dimension with top_n=5 to find the biggest optimization targets.
+4. For each bottleneck that has a source field, read the source file at that line to understand the implementation. Use LSP hover and findReferences to understand the function's role.
+5. Call hotpaths on the same dimension to see complete call chains.
+6. Call find_waste to identify work that didn't contribute to the result.
+7. Synthesize your findings into:
+   - What's the #1 bottleneck and what does the source code reveal about why?
+   - What work was wasted (with specific anti-patterns)?
+   - Concrete recommendations with code-level specificity (cite file:line locations).`,
+        },
+      }],
+    }),
+  );
+
+  server.registerPrompt(
+    'optimize_for',
+    {
+      title: 'Optimize For Dimension',
+      description: 'Targeted optimization analysis for a specific cost dimension (wall_ms, input_tokens, etc.)',
+      argsSchema: {
+        dimension: z.string().describe('The cost dimension to optimize: wall_ms, input_tokens, output_tokens, cost_usd, etc.'),
+      },
+    },
+    ({ dimension }) => ({
+      messages: [{
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text: `Optimize for: ${dimension}
+
+1. Call bottleneck with dimension="${dimension}" and top_n=5.
+2. For each bottleneck with a source field, read the code at that location. Use LSP to understand what the function does and who calls it.
+3. Call hotpaths with dimension="${dimension}" to see the full call chains.
+4. Call find_waste to identify redundant work.
+5. Produce a ranked list of optimizations, ordered by expected savings on ${dimension}. For each recommendation, cite the specific file:line and explain what to change.`,
+        },
+      }],
+    }),
+  );
+
+  server.registerResource(
+    'profile-summary',
+    'profile://summary',
+    {
+      title: 'Current Profile Summary',
+      description: 'Headline numbers from the active tracemeld profile — span count, error count, cost totals by kind.',
+      mimeType: 'application/json',
+    },
+    () => {
+      const summary = profileSummary(state.builder.profile, { group_by: 'kind' });
+      return {
+        contents: [{
+          uri: 'profile://summary',
+          text: JSON.stringify(summary, null, 2),
+        }],
+      };
+    },
+  );
+
   return server;
 }
 
