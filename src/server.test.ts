@@ -173,4 +173,40 @@ describe('MCP Server', () => {
     expect(parsed.data).toContain('main;foo;bar 10');
     expect(parsed.size_bytes).toBeGreaterThan(0);
   });
+
+  it('hotpaths returns ranked paths', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 5000 } } });
+    const result = await c.callTool({ name: 'hotpaths', arguments: { dimension: 'wall_ms' } });
+    const parsed = parseToolResult(result) as { paths: unknown[] };
+    expect(parsed.paths.length).toBeGreaterThan(0);
+  });
+
+  it('bottleneck returns optimization targets', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 5000 } } });
+    const result = await c.callTool({ name: 'bottleneck', arguments: { dimension: 'wall_ms' } });
+    const parsed = parseToolResult(result) as { entries: unknown[] };
+    expect(parsed.entries.length).toBeGreaterThan(0);
+  });
+
+  it('spinpaths detects low-output spans', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'sleep' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 30000 } } });
+    const result = await c.callTool({ name: 'spinpaths', arguments: {} });
+    const parsed = parseToolResult(result) as { entries: unknown[] };
+    expect(parsed.entries.length).toBeGreaterThan(0);
+  });
+
+  it('starvations returns empty for single-lane', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 100 } } });
+    const result = await c.callTool({ name: 'starvations', arguments: {} });
+    const parsed = parseToolResult(result) as { entries: unknown[] };
+    expect(parsed.entries).toHaveLength(0);
+  });
 });

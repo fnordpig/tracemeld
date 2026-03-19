@@ -10,6 +10,10 @@ import { explainSpan } from './analysis/explain.js';
 import { findWaste } from './analysis/waste.js';
 import { importProfile } from './importers/import.js';
 import { exportCollapsed } from './exporters/collapsed.js';
+import { findHotpaths } from './analysis/hotpaths.js';
+import { findBottlenecks } from './analysis/bottleneck.js';
+import { findSpinpaths } from './analysis/spinpaths.js';
+import { findStarvations } from './analysis/starvations.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 export function createServer(): McpServer {
@@ -194,6 +198,54 @@ export function createServer(): McpServer {
           }),
         }],
       };
+    },
+  );
+
+  server.registerTool(
+    'hotpaths',
+    {
+      description: "Find the critical call paths that account for the most cost. Unlike hotspots (flat ranking), this shows complete root-to-leaf paths. Use to understand which call chains dominate execution.",
+      inputSchema: { dimension: z.string(), top_n: z.number().optional() },
+    },
+    (args) => {
+      const result = findHotpaths(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'bottleneck',
+    {
+      description: "Find the single operations where optimization would have the most impact. Combines self-cost with path criticality — 'if you could speed up one thing, what would move the needle?'",
+      inputSchema: { dimension: z.string(), top_n: z.number().optional() },
+    },
+    (args) => {
+      const result = findBottlenecks(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'spinpaths',
+    {
+      description: "Detect operations with high wall time but low useful output — busy-waiting, spinning, or inefficient processing. Flags spans that spent significant time without producing tokens, bytes, or other measurable work.",
+      inputSchema: { min_wall_ms: z.number().optional() },
+    },
+    (args) => {
+      const result = findSpinpaths(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'starvations',
+    {
+      description: "Detect threads/lanes that are idle while others are active — indicates lock contention, unbalanced work, or serialization. Most useful with multi-threaded imported profiles (Gecko, Chrome trace).",
+      inputSchema: { min_idle_pct: z.number().optional() },
+    },
+    (args) => {
+      const result = findStarvations(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
   );
 
