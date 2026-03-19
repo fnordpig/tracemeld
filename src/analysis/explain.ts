@@ -1,5 +1,6 @@
 // src/analysis/explain.ts
 import type { Frame, Profile, Span, DetectedPattern } from '../model/types.js';
+import type { PatternRegistry } from '../patterns/registry.js';
 import {
   getSpanById,
   getSpanAncestry,
@@ -41,7 +42,11 @@ export interface ExplainSpanResult {
   recommendations: string[];
 }
 
-export function explainSpan(profile: Profile, input: ExplainSpanInput): ExplainSpanResult {
+export function explainSpan(
+  profile: Profile,
+  input: ExplainSpanInput,
+  registry?: PatternRegistry,
+): ExplainSpanResult {
   const span = getSpanById(profile, input.span_id);
 
   if (!span) {
@@ -70,8 +75,12 @@ export function explainSpan(profile: Profile, input: ExplainSpanInput): ExplainS
     ancestry,
     children,
     causal_chain: causalChain,
-    patterns: [],
-    recommendations: [],
+    patterns: registry
+      ? registry.getMatchesForSpan(profile, span.id).map((m) => ({ ...m.pattern, span_ids: m.span_ids }))
+      : [],
+    recommendations: registry
+      ? [...new Set(registry.getMatchesForSpan(profile, span.id).map((m) => m.recommendation))]
+      : [],
   };
 }
 

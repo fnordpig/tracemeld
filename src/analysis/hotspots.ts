@@ -1,5 +1,6 @@
 // src/analysis/hotspots.ts
 import type { Frame, Profile, Span, DetectedPattern } from '../model/types.js';
+import type { PatternRegistry } from '../patterns/registry.js';
 import {
   getAllSpans,
   getSpanAncestry,
@@ -29,7 +30,11 @@ export interface HotspotsResult {
   entries: HotspotEntry[];
 }
 
-export function findHotspots(profile: Profile, input: HotspotsInput): HotspotsResult {
+export function findHotspots(
+  profile: Profile,
+  input: HotspotsInput,
+  registry?: PatternRegistry,
+): HotspotsResult {
   const topN = input.top_n ?? 10;
   const minValue = input.min_value ?? 0;
   const dim = input.dimension;
@@ -86,7 +91,9 @@ export function findHotspots(profile: Profile, input: HotspotsInput): HotspotsRe
       total_cost: valuesToRecord(profile, item.span.values),
       self_cost: valuesToRecord(profile, item.selfCost),
       pct_of_total: pctOfTotal,
-      patterns: [], // Populated by anti-pattern engine in Plan 3
+      patterns: registry
+        ? registry.getMatchesForSpan(profile, item.span.id).map((m) => ({ ...m.pattern, span_ids: m.span_ids }))
+        : [],
       investigate: `call explain_span with span_id '${item.span.id}' to see the breakdown`,
     });
   }

@@ -1,9 +1,14 @@
 // src/model/state.ts
 import { ProfileBuilder } from './profile.js';
 import type { DetectedPattern } from './types.js';
+import { PatternRegistry } from '../patterns/registry.js';
+import { detectRetryLoop } from '../patterns/retry-loop.js';
+import { detectRedundantRead } from '../patterns/redundant-read.js';
+import { detectBlindEdit } from '../patterns/blind-edit.js';
 
 export class ProfilerState {
   readonly builder: ProfileBuilder;
+  readonly registry: PatternRegistry;
   readonly imported = new Map<string, ProfileBuilder>();
   private spanStacks = new Map<string, string[]>();
   activeLaneId = 'main';
@@ -13,6 +18,10 @@ export class ProfilerState {
 
   constructor() {
     this.builder = new ProfileBuilder('session');
+    this.registry = new PatternRegistry();
+    this.registry.register(detectRetryLoop);
+    this.registry.register(detectRedundantRead);
+    this.registry.register(detectBlindEdit);
   }
 
   nextSpanId(): string {
@@ -52,5 +61,6 @@ export class ProfilerState {
 
   invalidatePatternCache(): void {
     this.patternCache = null;
+    this.registry.invalidate();
   }
 }
