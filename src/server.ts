@@ -15,6 +15,7 @@ import { findBottlenecks } from './analysis/bottleneck.js';
 import { findSpinpaths } from './analysis/spinpaths.js';
 import { findStarvations } from './analysis/starvations.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import pako from 'pako';
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -147,15 +148,29 @@ export function createServer(): McpServer {
     },
     (args) => {
       let content: string;
+      let symsJson: string | undefined;
       const format = args.format ?? 'auto';
       if (!args.source.includes('\n') && existsSync(args.source)) {
-        // Binary formats (pprof) must be read as latin1 to preserve bytes
-        const isBinary = format === 'pprof' || args.source.endsWith('.pb.gz') || args.source.endsWith('.prof');
-        content = readFileSync(args.source, isBinary ? 'latin1' : 'utf-8');
+        const rawBuffer = readFileSync(args.source);
+        // Detect gzip (magic bytes 0x1f 0x8b) and decompress
+        if (rawBuffer.length >= 2 && rawBuffer[0] === 0x1f && rawBuffer[1] === 0x8b) {
+          const decompressed = pako.ungzip(rawBuffer);
+          content = Buffer.from(decompressed).toString('utf-8');
+        } else {
+          // Binary formats (pprof) must be read as latin1 to preserve bytes
+          const isBinary = format === 'pprof' || args.source.endsWith('.pb.gz') || args.source.endsWith('.prof');
+          content = isBinary ? rawBuffer.toString('latin1') : rawBuffer.toString('utf-8');
+        }
+
+        // Auto-detect samply .syms.json sidecar for Gecko profiles
+        const symsPath = args.source + '.syms.json';
+        if (existsSync(symsPath)) {
+          symsJson = readFileSync(symsPath, 'utf-8');
+        }
       } else {
         content = args.source;
       }
-      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder);
+      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder, symsJson);
       state.invalidatePatternCache();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },

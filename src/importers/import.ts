@@ -21,6 +21,7 @@ export function importProfile(
   name: string,
   formatHint: ImportFormat | 'auto' = 'auto',
   mergeInto?: ProfileBuilder,
+  symsJson?: string,
 ): ImportProfileResult {
   const format = formatHint === 'auto' ? detectFormat(content) : formatHint;
 
@@ -28,7 +29,7 @@ export function importProfile(
     throw new Error(`Unable to detect format for '${name}'. Format is unknown.`);
   }
 
-  const imported = runImporter(content, name, format);
+  const imported = runImporter(content, name, format, symsJson);
 
   let samplesAdded = 0;
   let spansAdded = 0;
@@ -55,14 +56,14 @@ export function importProfile(
   };
 }
 
-function runImporter(content: string, name: string, format: ImportFormat): ImportedProfile {
+function runImporter(content: string, name: string, format: ImportFormat, symsJson?: string): ImportedProfile {
   switch (format) {
     case 'collapsed':
       return importCollapsed(content, name);
     case 'chrome_trace':
       return importChromeTrace(content, name);
     case 'gecko':
-      return importGecko(content, name);
+      return importGecko(content, name, symsJson);
     case 'pprof':
       return importPprof(content, name);
     case 'speedscope':
