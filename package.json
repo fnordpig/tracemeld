@@ -1,6 +1,6 @@
 {
   "name": "tracemeld",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "LLM-native MCP server for performance profiling and analysis",
   "type": "module",
   "main": "./build/index.js",
