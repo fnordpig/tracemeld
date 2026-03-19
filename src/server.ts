@@ -8,6 +8,9 @@ import { profileSummary } from './analysis/summary.js';
 import { findHotspots } from './analysis/hotspots.js';
 import { explainSpan } from './analysis/explain.js';
 import { findWaste } from './analysis/waste.js';
+import { importProfile } from './importers/import.js';
+import { exportCollapsed } from './exporters/collapsed.js';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -124,6 +127,73 @@ export function createServer(): McpServer {
     (args) => {
       const result = findWaste(state.builder.profile, state.registry, args);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'import_profile',
+    {
+      description:
+        "Load profiling data from a file path or inline string. Auto-detects format (collapsed stacks, Chrome trace) or accepts a hint. Use when you want to analyze an existing profile.",
+      inputSchema: {
+        source: z.string().describe('File path or inline profile data string'),
+        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'gecko', 'pprof', 'speedscope']).optional(),
+        lane_name: z.string().optional(),
+      },
+    },
+    (args) => {
+      let content: string;
+      if (!args.source.includes('\n') && existsSync(args.source)) {
+        content = readFileSync(args.source, 'utf-8');
+      } else {
+        content = args.source;
+      }
+      const format = args.format ?? 'auto';
+      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder);
+      state.invalidatePatternCache();
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'export_profile',
+    {
+      description:
+        "Export the current profile to a standard format for visualization. Currently supports 'collapsed' (for flamegraph tools). Returns the data as a string or writes to file.",
+      inputSchema: {
+        format: z.enum(['collapsed']).describe('Export format'),
+        output_path: z.string().optional().describe('File path to write. If omitted, returns data inline.'),
+      },
+    },
+    (args) => {
+      const data = exportCollapsed(state.builder.profile);
+
+      if (args.output_path) {
+        writeFileSync(args.output_path, data, 'utf-8');
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              format: args.format,
+              file_path: args.output_path,
+              size_bytes: Buffer.byteLength(data, 'utf-8'),
+              notes: [],
+            }),
+          }],
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            format: args.format,
+            data,
+            size_bytes: Buffer.byteLength(data, 'utf-8'),
+            notes: [],
+          }),
+        }],
+      };
     },
   );
 

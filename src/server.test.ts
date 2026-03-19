@@ -147,4 +147,30 @@ describe('MCP Server', () => {
     expect(parsed.items.length).toBeGreaterThan(0);
     expect(parsed.total_savings['wall_ms']).toBeGreaterThan(0);
   });
+
+  it('import_profile imports collapsed stacks', async () => {
+    const c = await createTestClient();
+    const result = await c.callTool({
+      name: 'import_profile',
+      arguments: { source: 'main;foo;bar 10\nmain;foo;baz 20\n' },
+    });
+    const parsed = parseToolResult(result) as { format_detected: string; samples_added: number };
+    expect(parsed.format_detected).toBe('collapsed');
+    expect(parsed.samples_added).toBe(2);
+  });
+
+  it('export_profile exports collapsed stacks', async () => {
+    const c = await createTestClient();
+    await c.callTool({
+      name: 'import_profile',
+      arguments: { source: 'main;foo;bar 10\n' },
+    });
+    const result = await c.callTool({
+      name: 'export_profile',
+      arguments: { format: 'collapsed' },
+    });
+    const parsed = parseToolResult(result) as { data: string; size_bytes: number };
+    expect(parsed.data).toContain('main;foo;bar 10');
+    expect(parsed.size_bytes).toBeGreaterThan(0);
+  });
 });
