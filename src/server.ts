@@ -163,9 +163,18 @@ export function createServer(): McpServer {
         }
 
         // Auto-detect samply .syms.json sidecar for Gecko profiles
-        const symsPath = args.source + '.syms.json';
+        // samply names it: profile.json.gz → profile.json.syms.json (strips .gz)
+        const basePath = args.source.endsWith('.gz') ? args.source.slice(0, -3) : args.source;
+        const symsPath = basePath + '.syms.json';
         if (existsSync(symsPath)) {
           symsJson = readFileSync(symsPath, 'utf-8');
+        }
+        // Also check the literal path + .syms.json as fallback
+        if (!symsJson) {
+          const altSymsPath = args.source + '.syms.json';
+          if (existsSync(altSymsPath)) {
+            symsJson = readFileSync(altSymsPath, 'utf-8');
+          }
         }
       } else {
         content = args.source;
