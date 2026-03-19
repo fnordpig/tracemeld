@@ -73,6 +73,35 @@ export function filterSpansByTimeRange(
   );
 }
 
+/** Source location for LSP navigation. Format: "file:line" when available. */
+export interface SourceLocation {
+  file?: string;
+  line?: number;
+  /** Pre-formatted for LLM navigation: "file:line" or undefined if no source info. */
+  ref?: string;
+}
+
+/** Extract source location from a frame, formatted for LSP navigation. */
+export function getSourceLocation(profile: Profile, frameIndex: number): SourceLocation | undefined {
+  const frame = profile.frames[frameIndex] as Frame | undefined;
+  if (!frame) return undefined;
+  if (!frame.file) return undefined;
+
+  const loc: SourceLocation = { file: frame.file };
+  if (frame.line != null) {
+    loc.line = frame.line;
+    loc.ref = `${frame.file}:${frame.line}`;
+  } else {
+    loc.ref = frame.file;
+  }
+  return loc;
+}
+
+/** Get source location for a span's frame. */
+export function getSpanSourceLocation(profile: Profile, span: Span): SourceLocation | undefined {
+  return getSourceLocation(profile, span.frame_index);
+}
+
 export function valuesToRecord(
   profile: Profile,
   values: number[],

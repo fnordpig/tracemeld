@@ -6,6 +6,8 @@ import {
   getSpanAncestry,
   computeSelfCost,
   valuesToRecord,
+  getSpanSourceLocation,
+  type SourceLocation,
 } from './query.js';
 
 export interface HotspotsInput {
@@ -18,6 +20,7 @@ export interface HotspotEntry {
   span_id: string;
   ancestry: string[];
   name: string;
+  source?: SourceLocation;
   total_cost: Record<string, number>;
   self_cost: Record<string, number>;
   pct_of_total: number;
@@ -84,17 +87,23 @@ export function findHotspots(
         ? Math.round((item.rankValue / dimensionTotal) * 10000) / 100
         : 0;
 
+    const source = getSpanSourceLocation(profile, item.span);
+    const investigateHint = source?.ref
+      ? `Read ${source.ref} to understand this function, then call explain_span with span_id '${item.span.id}'`
+      : `call explain_span with span_id '${item.span.id}' to see the breakdown`;
+
     entries.push({
       span_id: item.span.id,
       ancestry: getSpanAncestry(profile, item.span),
       name: frameName,
+      source,
       total_cost: valuesToRecord(profile, item.span.values),
       self_cost: valuesToRecord(profile, item.selfCost),
       pct_of_total: pctOfTotal,
       patterns: registry
         ? registry.getMatchesForSpan(profile, item.span.id).map((m) => ({ ...m.pattern, span_ids: m.span_ids }))
         : [],
-      investigate: `call explain_span with span_id '${item.span.id}' to see the breakdown`,
+      investigate: investigateHint,
     });
   }
 
