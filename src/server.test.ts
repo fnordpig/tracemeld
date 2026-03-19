@@ -85,4 +85,48 @@ describe('MCP Server', () => {
     expect(parsed.marker_id).toBeDefined();
     expect(parsed.timestamp).toBeGreaterThan(0);
   });
+
+  it('profile_summary returns totals and groups', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'npm test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 5000 } } });
+
+    const result = await c.callTool({
+      name: 'profile_summary',
+      arguments: { group_by: 'kind' },
+    });
+    const parsed = parseToolResult(result) as { span_count: number; groups: Array<{ key: string }> };
+    expect(parsed.span_count).toBeGreaterThan(0);
+    expect(parsed.groups.length).toBeGreaterThan(0);
+  });
+
+  it('hotspots returns ranked entries', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'npm test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 5000 } } });
+
+    const result = await c.callTool({
+      name: 'hotspots',
+      arguments: { dimension: 'wall_ms', top_n: 5 },
+    });
+    const parsed = parseToolResult(result) as { entries: Array<{ name: string }> };
+    expect(parsed.entries.length).toBeGreaterThan(0);
+  });
+
+  it('explain_span returns span details', async () => {
+    const c = await createTestClient();
+    const traceResult = await c.callTool({
+      name: 'trace',
+      arguments: { action: 'begin', kind: 'bash', name: 'npm test' },
+    });
+    const traceData = parseToolResult(traceResult) as { span_id: string };
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 100 } } });
+
+    const result = await c.callTool({
+      name: 'explain_span',
+      arguments: { span_id: traceData.span_id },
+    });
+    const parsed = parseToolResult(result) as { span: { name: string } };
+    expect(parsed.span.name).toBe('bash:npm test');
+  });
 });

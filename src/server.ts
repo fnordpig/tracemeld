@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { ProfilerState } from './model/state.js';
 import { handleTrace } from './instrument/trace.js';
 import { handleMark } from './instrument/mark.js';
+import { profileSummary } from './analysis/summary.js';
+import { findHotspots } from './analysis/hotspots.js';
+import { explainSpan } from './analysis/explain.js';
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -46,6 +49,59 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = handleMark(state, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'profile_summary',
+    {
+      description:
+        'Get headline performance numbers for a session: total time, tokens, cost, errors. Group by turn, operation kind, or execution lane to see where effort concentrated. Start here when you want to understand how a session went.',
+      inputSchema: {
+        group_by: z.enum(['kind', 'turn', 'lane']).optional(),
+        time_range: z
+          .object({
+            start_ms: z.number(),
+            end_ms: z.number(),
+          })
+          .optional(),
+      },
+    },
+    (args) => {
+      const result = profileSummary(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'hotspots',
+    {
+      description:
+        'Find the most expensive operations by any dimension: wall time, tokens consumed, tokens generated, dollar cost, or error count. Returns a ranked list with ancestry chains. Use after profile_summary identifies a concentration of cost.',
+      inputSchema: {
+        dimension: z.string(),
+        top_n: z.number().optional(),
+        min_value: z.number().optional(),
+      },
+    },
+    (args) => {
+      const result = findHotspots(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'explain_span',
+    {
+      description:
+        'Deep-dive into one expensive span. Shows its child breakdown, the causal chain of what happened, and any detected anti-patterns. Use when hotspots identified a specific span to investigate.',
+      inputSchema: {
+        span_id: z.string(),
+      },
+    },
+    (args) => {
+      const result = explainSpan(state.builder.profile, args);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
   );
