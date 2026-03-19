@@ -1,0 +1,71 @@
+{
+  "meta": {
+    "version": 24,
+    "interval": 1,
+    "startTime": 1000000,
+    "product": "test-app",
+    "categories": [
+      { "name": "Other", "color": "grey", "subcategories": ["Other"] },
+      { "name": "User", "color": "yellow", "subcategories": ["Other"] }
+    ]
+  },
+  "libs": [],
+  "threads": [
+    {
+      "name": "main",
+      "isMainThread": true,
+      "pid": 1,
+      "tid": 1,
+      "registerTime": 0,
+      "unregisterTime": null,
+      "processType": "default",
+      "processName": "test-app",
+      "processStartupTime": 0,
+      "processShutdownTime": null,
+      "pausedRanges": [],
+      "showMarkersInTimeline": false,
+      "samples": {
+        "length": 4,
+        "weightType": "samples",
+        "stack": [2, 4, 4, 2],
+        "timeDeltas": [0, 1, 1, 1],
+        "weight": [1, 1, 1, 1],
+        "threadCPUDelta": [0, 0, 0, 0]
+      },
+      "stackTable": {
+        "length": 5,
+        "prefix": [null, 0, 1, 0, 3],
+        "frame": [0, 1, 2, 1, 3]
+      },
+      "frameTable": {
+        "length": 4,
+        "address": [-1, -1, -1, -1],
+        "inlineDepth": [0, 0, 0, 0],
+        "category": [1, 1, 1, 1],
+        "subcategory": [0, 0, 0, 0],
+        "func": [0, 1, 2, 3],
+        "nativeSymbol": [null, null, null, null],
+        "innerWindowID": [0, 0, 0, 0],
+        "line": [null, null, null, null],
+        "column": [null, null, null, null]
+      },
+      "funcTable": {
+        "length": 4,
+        "name": [0, 1, 2, 3],
+        "isJS": [false, false, false, false],
+        "relevantForJS": [false, false, false, false],
+        "resource": [-1, -1, -1, -1],
+        "fileName": [null, null, null, null],
+        "lineNumber": [null, null, null, null],
+        "columnNumber": [null, null, null, null]
+      },
+      "stringArray": ["main", "doWork", "compute", "render"],
+      "resourceTable": { "length": 0, "lib": [], "name": [], "host": [], "type": [] },
+      "markers": { "length": 0, "category": [], "data": [], "endTime": [], "name": [], "phase": [], "startTime": [] },
+      "nativeSymbols": { "length": 0, "address": [], "functionSize": [], "libIndex": [], "name": [] }
+    }
+  ],
+  "pages": [],
+  "profilerOverhead": [],
+  "counters": []
+}
