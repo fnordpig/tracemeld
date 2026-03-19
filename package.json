@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "inspect": "npm run build && npx @modelcontextprotocol/inspector node ./build/cli.js",
-    "prepublishOnly": "npm run build"
+    "prepare": "npm run build"
   },
   "files": [
     "build/**/*.js",
