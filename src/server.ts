@@ -7,6 +7,7 @@ import { handleMark } from './instrument/mark.js';
 import { profileSummary } from './analysis/summary.js';
 import { findHotspots } from './analysis/hotspots.js';
 import { explainSpan } from './analysis/explain.js';
+import { findWaste } from './analysis/waste.js';
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -86,7 +87,7 @@ export function createServer(): McpServer {
       },
     },
     (args) => {
-      const result = findHotspots(state.builder.profile, args);
+      const result = findHotspots(state.builder.profile, args, state.registry);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
   );
@@ -101,7 +102,27 @@ export function createServer(): McpServer {
       },
     },
     (args) => {
-      const result = explainSpan(state.builder.profile, args);
+      const result = explainSpan(state.builder.profile, args, state.registry);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'find_waste',
+    {
+      description:
+        'Identify work that didn\'t contribute to the final result: retries, unused reads, blind edits. Each waste item includes counterfactual savings and a concrete recommendation.',
+      inputSchema: {
+        time_range: z
+          .object({
+            start_ms: z.number(),
+            end_ms: z.number(),
+          })
+          .optional(),
+      },
+    },
+    (args) => {
+      const result = findWaste(state.builder.profile, state.registry, args);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
   );

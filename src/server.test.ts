@@ -129,4 +129,22 @@ describe('MCP Server', () => {
     const parsed = parseToolResult(result) as { span: { name: string } };
     expect(parsed.span.name).toBe('bash:npm test');
   });
+
+  it('find_waste returns waste items', async () => {
+    const c = await createTestClient();
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'turn', name: '1' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'npm test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 5000 }, error: 'fail' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'begin', kind: 'bash', name: 'npm test' } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'bash', cost: { wall_ms: 5000 } } });
+    await c.callTool({ name: 'trace', arguments: { action: 'end', kind: 'turn' } });
+
+    const result = await c.callTool({
+      name: 'find_waste',
+      arguments: {},
+    });
+    const parsed = parseToolResult(result) as { items: Array<{ pattern: string }>; total_savings: Record<string, number> };
+    expect(parsed.items.length).toBeGreaterThan(0);
+    expect(parsed.total_savings['wall_ms']).toBeGreaterThan(0);
+  });
 });
