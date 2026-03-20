@@ -24,6 +24,10 @@
     "!build/**/*.test.*",
     "README.md"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fnordpig/tracemeld.git"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=20"
