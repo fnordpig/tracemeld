@@ -23,7 +23,7 @@ export interface HotspotEntry {
   span_id: string;
   ancestry: string[];
   name: string;
-  source?: SourceLocation;
+  code_location?: SourceLocation;
   total_cost: Record<string, number>;
   self_cost: Record<string, number>;
   pct_of_total: number;
@@ -108,7 +108,7 @@ export function findHotspots(
       span_id: item.span.id,
       ancestry: getSpanAncestry(profile, item.span, spanIndex),
       name: frameName,
-      source,
+      code_location: source,
       total_cost: valuesToRecord(profile, item.span.values),
       self_cost: valuesToRecord(profile, item.selfCost),
       pct_of_total: pctOfTotal,
@@ -138,7 +138,7 @@ export function findHotspots(
         span_id: `frame:${fs.frame_index}`,
         ancestry: [fs.name],
         name: fs.name,
-        source,
+        code_location: source,
         total_cost: valuesToRecord(profile, fs.total_cost),
         self_cost: valuesToRecord(profile, fs.self_cost),
         pct_of_total: pctOfTotal,

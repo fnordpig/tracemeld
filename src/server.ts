@@ -16,12 +16,17 @@ import { findSpinpaths } from './analysis/spinpaths.js';
 import { findStarvations } from './analysis/starvations.js';
 import { focusFunction } from './analysis/focus-function.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import pako from 'pako';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8')) as { version: string };
 
 export function createServer(): McpServer {
   const server = new McpServer({
     name: 'tracemeld',
-    version: '0.1.0',
+    version: pkg.version,
   });
 
   const state = new ProfilerState();
@@ -291,6 +296,35 @@ export function createServer(): McpServer {
     (args) => {
       const result = focusFunction(state.builder.profile, args);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'up_to_date',
+    {
+      description:
+        'Check whether the running tracemeld version matches the latest published on npm. Reports both versions so you can tell the user if an upgrade is available.',
+      inputSchema: {},
+    },
+    async () => {
+      const running = pkg.version;
+      let latest = 'unknown';
+      try {
+        const res = await fetch('https://registry.npmjs.org/tracemeld/latest');
+        if (res.ok) {
+          const data = await res.json() as { version: string };
+          latest = data.version;
+        }
+      } catch {
+        // network error — report what we can
+      }
+      const up_to_date = running === latest;
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ running, latest, up_to_date }),
+        }],
+      };
     },
   );
 

@@ -19,7 +19,7 @@ export interface ExplainSpanResult {
   span: {
     name: string;
     kind: string;
-    source?: SourceLocation;
+    code_location?: SourceLocation;
     start_time: number;
     end_time: number;
     duration_ms: number;
@@ -31,7 +31,7 @@ export interface ExplainSpanResult {
   children: Array<{
     span_id: string;
     name: string;
-    source?: SourceLocation;
+    code_location?: SourceLocation;
     cost: Record<string, number>;
     pct_of_parent: Record<string, number>;
     error?: string;
@@ -71,7 +71,7 @@ export function explainSpan(
     span: {
       name: frameName,
       kind,
-      source: getSpanSourceLocation(profile, span),
+      code_location: getSpanSourceLocation(profile, span),
       start_time: span.start_time,
       end_time: span.end_time,
       duration_ms: span.end_time - span.start_time,
@@ -117,7 +117,7 @@ function buildChildren(
     children.push({
       span_id: child.id,
       name: childName,
-      source: getSpanSourceLocation(profile, child),
+      code_location: getSpanSourceLocation(profile, child),
       cost: childCost,
       pct_of_parent: pctOfParent,
       error: child.error,

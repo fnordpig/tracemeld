@@ -14,7 +14,7 @@ export interface BottleneckEntry {
   span_id: string;
   name: string;
   kind: string;
-  source?: SourceLocation;
+  code_location?: SourceLocation;
   ancestry: string[];
   self_cost: Record<string, number>;
   total_cost: Record<string, number>;
@@ -64,7 +64,7 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
       span_id: span.id,
       name: frameName,
       kind: extractKind(frameName),
-      source,
+      code_location: source,
       ancestry: getSpanAncestry(profile, span, spanIndex),
       self_cost: valuesToRecord(profile, selfCost),
       total_cost: valuesToRecord(profile, span.values),
@@ -91,7 +91,7 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
       span_id: `frame:${fs.frame_index}`,
       name: fs.name,
       kind: extractKind(fs.name),
-      source,
+      code_location: source,
       ancestry: [fs.name],
       self_cost: valuesToRecord(profile, fs.self_cost),
       total_cost: valuesToRecord(profile, fs.total_cost),

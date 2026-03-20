@@ -12,7 +12,7 @@ export interface HotpathsInput {
 
 export interface HotpathEntry {
   frames: string[];
-  leaf_source?: SourceLocation;
+  leaf_code_location?: SourceLocation;
   leaf_cost: number;
   path_cost: Record<string, number>;
   pct_of_total: number;
@@ -42,7 +42,7 @@ export function findHotpaths(profile: Profile, input: HotpathsInput): HotpathsRe
     if (leafCost <= 0) continue;
     entries.push({
       frames: getSpanAncestry(profile, span, spanIndex),
-      leaf_source: getSpanSourceLocation(profile, span),
+      leaf_code_location: getSpanSourceLocation(profile, span),
       leaf_cost: leafCost,
       path_cost: valuesToRecord(profile, selfCost),
       pct_of_total: 0,
@@ -58,7 +58,7 @@ export function findHotpaths(profile: Profile, input: HotpathsInput): HotpathsRe
       const leafFrameIdx = sample.stack[sample.stack.length - 1];
       entries.push({
         frames: sample.stack.map((idx) => profile.frames[idx]?.name ?? '<unknown>'),
-        leaf_source: sample.stack.length > 0 ? getSourceLocation(profile, leafFrameIdx) : undefined,
+        leaf_code_location: sample.stack.length > 0 ? getSourceLocation(profile, leafFrameIdx) : undefined,
         leaf_cost: cost,
         path_cost: valuesToRecord(profile, sample.values),
         pct_of_total: 0,

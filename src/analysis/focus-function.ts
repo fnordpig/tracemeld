@@ -20,7 +20,7 @@ export interface FocusFunctionInput {
 interface RelatedFunction {
   name: string;
   frame_index: number;
-  source?: SourceLocation;
+  code_location?: SourceLocation;
   call_count: number;
   total_cost: Record<string, number>;
   pct_of_function_time: number;
@@ -29,7 +29,7 @@ interface RelatedFunction {
 export interface FocusFunctionResult {
   function_name: string;
   frame_index: number;
-  source?: SourceLocation;
+  code_location?: SourceLocation;
   self_cost: Record<string, number>;
   total_cost: Record<string, number>;
   sample_count: number;
@@ -176,7 +176,7 @@ export function focusFunction(
   return {
     function_name: primaryFrame.name,
     frame_index: primaryIdx,
-    source,
+    code_location: source,
     self_cost: valuesToRecord(profile, totalSelfCost),
     total_cost: valuesToRecord(profile, totalTotalCost),
     sample_count: sampleCount,
@@ -254,7 +254,7 @@ function buildRankedList(
     entries.push({
       name: frame?.name ?? `<unknown ${frameIdx}>`,
       frame_index: frameIdx,
-      source: getSourceLocation(profile, frameIdx),
+      code_location: getSourceLocation(profile, frameIdx),
       call_count: entry.count,
       total_cost: valuesToRecord(profile, entry.cost),
       pct_of_function_time: pct,
