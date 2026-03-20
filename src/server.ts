@@ -14,6 +14,7 @@ import { findHotpaths } from './analysis/hotpaths.js';
 import { findBottlenecks } from './analysis/bottleneck.js';
 import { findSpinpaths } from './analysis/spinpaths.js';
 import { findStarvations } from './analysis/starvations.js';
+import { focusFunction } from './analysis/focus-function.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import pako from 'pako';
 
@@ -272,6 +273,23 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = findStarvations(state.builder.profile, args);
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+    },
+  );
+
+  server.registerTool(
+    'focus_function',
+    {
+      description:
+        "Zoom into a single function in the call graph. Shows its cost, who calls it (callers ranked by time spent), and what it calls (callees ranked by time spent). Use when you know which function to investigate and want to understand its role in the profile — where pressure comes from and where it flows.",
+      inputSchema: {
+        function_name: z.string().describe('Function name to focus on (exact or substring match)'),
+        dimension: z.string().optional().describe('Cost dimension to rank by (default: first value type)'),
+        top_n: z.number().optional().describe('Max callers/callees to return (default: 10)'),
+      },
+    },
+    (args) => {
+      const result = focusFunction(state.builder.profile, args);
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
   );
