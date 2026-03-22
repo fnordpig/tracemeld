@@ -139,11 +139,14 @@ describe('importNsightSqlite', () => {
 
   it('imports synchronization events', async () => {
     const data = await createTestDb((db) => {
-      db.run("INSERT INTO StringIds VALUES (1, 'cudaDeviceSynchronize')");
-      db.run(`CREATE TABLE CUPTI_ACTIVITY_KIND_SYNCHRONIZATION (
-        nameId INTEGER, start INTEGER, end INTEGER, correlationId INTEGER
+      db.run(`CREATE TABLE ENUM_CUPTI_SYNC_TYPE (
+        id INTEGER, name TEXT, label TEXT
       )`);
-      db.run('INSERT INTO CUPTI_ACTIVITY_KIND_SYNCHRONIZATION VALUES (1, 10000000, 15000000, 300)');
+      db.run("INSERT INTO ENUM_CUPTI_SYNC_TYPE VALUES (4, 'CUPTI_ACTIVITY_SYNCHRONIZATION_TYPE_CONTEXT_SYNCHRONIZE', 'Context sync')");
+      db.run(`CREATE TABLE CUPTI_ACTIVITY_KIND_SYNCHRONIZATION (
+        syncType INTEGER, start INTEGER, end INTEGER, correlationId INTEGER
+      )`);
+      db.run('INSERT INTO CUPTI_ACTIVITY_KIND_SYNCHRONIZATION VALUES (4, 10000000, 15000000, 300)');
     });
 
     const result = await importNsightSqlite(data, 'test.sqlite');
@@ -151,7 +154,7 @@ describe('importNsightSqlite', () => {
 
     const syncSpan = runtimeLane.spans[0];
     const frame = result.profile.frames[syncSpan.frame_index];
-    expect(frame.name).toBe('cuda_sync:cudaDeviceSynchronize');
+    expect(frame.name).toBe('cuda_sync:Context sync');
     expect(syncSpan.values[0]).toBeCloseTo(5); // 5ms
   });
 

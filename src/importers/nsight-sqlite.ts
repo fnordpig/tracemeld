@@ -359,16 +359,28 @@ export async function importNsightSqlite(
     if (tableExists(db, 'CUPTI_ACTIVITY_KIND_SYNCHRONIZATION')) {
       const lane = getOrCreateLane(lanesMap, 'cuda-runtime', 'cuda-runtime', 'custom');
       const filter = timeRangeFilter(options, 'start', 'end');
+
+      // Build sync type label map from enum table
+      const syncTypeLabels = new Map<number, string>();
+      if (tableExists(db, 'ENUM_CUPTI_SYNC_TYPE')) {
+        const enumResult = db.exec('SELECT id, label FROM ENUM_CUPTI_SYNC_TYPE');
+        if (enumResult.length > 0) {
+          for (const erow of enumResult[0].values) {
+            syncTypeLabels.set(erow[0] as number, erow[1] as string);
+          }
+        }
+      }
+
       const result = db.exec(
-        `SELECT nameId, start, end, correlationId FROM CUPTI_ACTIVITY_KIND_SYNCHRONIZATION WHERE 1=1${filter}`,
+        `SELECT syncType, start, end, correlationId FROM CUPTI_ACTIVITY_KIND_SYNCHRONIZATION WHERE 1=1${filter}`,
       );
       if (result.length > 0) {
         for (const row of result[0].values) {
-          const nameId = row[0] as number;
+          const syncType = row[0] as number;
           const startNs = row[1] as number;
           const endNs = row[2] as number;
           const correlationId = row[3] as number;
-          const syncName = resolveName(nameId);
+          const syncName = syncTypeLabels.get(syncType) ?? `sync_type_${syncType}`;
           const frameIdx = frameTable.getOrInsert({ name: `cuda_sync:${syncName}` });
           const wallMs = nsToMs(endNs - startNs);
 
