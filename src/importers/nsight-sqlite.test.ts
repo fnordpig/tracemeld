@@ -243,11 +243,11 @@ describe('importNsightSqlite', () => {
 
     const result = await importNsightSqlite(data, 'test', { max_kernels: 10 });
     const kernelLane = result.profile.lanes.find(l => l.id === 'gpu-0-kernels');
-    expect(kernelLane).toBeDefined();
-    expect(kernelLane!.spans).toHaveLength(10);
-    expect(kernelLane!.markers).toHaveLength(1);
-    expect(kernelLane!.markers[0].severity).toBe('warning');
-    expect(kernelLane!.markers[0].name).toContain('Truncated');
+    if (!kernelLane) throw new Error('kernelLane not found');
+    expect(kernelLane.spans).toHaveLength(10);
+    expect(kernelLane.markers).toHaveLength(1);
+    expect(kernelLane.markers[0].severity).toBe('warning');
+    expect(kernelLane.markers[0].name).toContain('Truncated');
   });
 
   it('merges nsight data into existing LLM profile builder', async () => {
@@ -277,8 +277,8 @@ describe('importNsightSqlite', () => {
 
     // GPU span should have 0 for LLM-only dimensions
     const gpuLane = builder.profile.lanes.find(l => l.id.includes('gpu-0-kernels'));
-    expect(gpuLane).toBeDefined();
-    const span = gpuLane!.spans[0];
+    if (!gpuLane) throw new Error('gpuLane not found');
+    const span = gpuLane.spans[0];
     expect(span.values.length).toBe(builder.profile.value_types.length);
 
     const tokensIdx = builder.profile.value_types.findIndex(vt => vt.key === 'input_tokens');

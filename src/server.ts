@@ -8,7 +8,8 @@ import { profileSummary } from './analysis/summary.js';
 import { findHotspots } from './analysis/hotspots.js';
 import { explainSpan } from './analysis/explain.js';
 import { findWaste } from './analysis/waste.js';
-import { importProfile } from './importers/import.js';
+import { importProfile, mergeImportedProfile, buildImportResult } from './importers/import.js';
+import { importNsightSqlite } from './importers/nsight-sqlite.js';
 import { exportCollapsed } from './exporters/collapsed.js';
 import { findHotpaths } from './analysis/hotpaths.js';
 import { findBottlenecks } from './analysis/bottleneck.js';
@@ -148,16 +149,40 @@ export function createServer(): McpServer {
         "Load profiling data from a file path or inline string. Auto-detects format (collapsed stacks, Chrome trace) or accepts a hint. Use when you want to analyze an existing profile.",
       inputSchema: {
         source: z.string().describe('File path or inline profile data string'),
-        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'gecko', 'pprof', 'speedscope']).optional(),
+        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite']).optional(),
         lane_name: z.string().optional(),
+        nsight_options: z.object({
+          max_kernels: z.number().optional(),
+          time_range: z.object({
+            start_ns: z.number(),
+            end_ns: z.number(),
+          }).optional(),
+        }).optional(),
       },
     },
-    (args) => {
+    async (args) => {
       let content: string;
       let symsJson: string | undefined;
       const format = args.format ?? 'auto';
       if (!args.source.includes('\n') && existsSync(args.source)) {
         const rawBuffer = readFileSync(args.source);
+
+        // Detect Nsight SQLite: check magic bytes or format hint
+        const isSqlite = (rawBuffer.length >= 16 && rawBuffer.subarray(0, 15).toString('ascii') === 'SQLite format 3')
+          || format === 'nsight_sqlite';
+
+        if (isSqlite) {
+          const imported = await importNsightSqlite(
+            new Uint8Array(rawBuffer),
+            args.lane_name ?? 'imported',
+            args.nsight_options,
+          );
+          const result = buildImportResult(imported);
+          mergeImportedProfile(state.builder, imported);
+          state.invalidatePatternCache();
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+        }
+
         // Detect gzip (magic bytes 0x1f 0x8b) and decompress
         if (rawBuffer.length >= 2 && rawBuffer[0] === 0x1f && rawBuffer[1] === 0x8b) {
           const decompressed = pako.ungzip(rawBuffer);
