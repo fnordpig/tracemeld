@@ -32,7 +32,8 @@ async function createTestClient(): Promise<Client> {
 
 function parseToolResult(result: Awaited<ReturnType<Client['callTool']>>): unknown {
   const content = result.content as Array<{ type: string; text: string }>;
-  return JSON.parse(content[0].text) as unknown;
+  // Use last content block — tools with headlines put summary first, JSON last
+  return JSON.parse(content[content.length - 1].text) as unknown;
 }
 
 afterEach(async () => {

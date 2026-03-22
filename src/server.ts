@@ -12,18 +12,76 @@ import { importProfile, mergeImportedProfile, buildImportResult } from './import
 import { importNsightSqlite } from './importers/nsight-sqlite.js';
 import { exportCollapsed } from './exporters/collapsed.js';
 import { exportSpeedscope } from './exporters/speedscope.js';
+import { exportChromeTrace } from './exporters/chrome-trace.js';
 import { findHotpaths } from './analysis/hotpaths.js';
 import { findBottlenecks } from './analysis/bottleneck.js';
 import { findSpinpaths } from './analysis/spinpaths.js';
 import { findStarvations } from './analysis/starvations.js';
 import { focusFunction } from './analysis/focus-function.js';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { diffBaselines } from './analysis/diff.js';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pako from 'pako';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf-8')) as { version: string };
+
+/* ---------- headline summary helpers (T4.4) ---------- */
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+function summarizeSummary(r: { totals: Record<string, number>; span_count: number; error_count: number; wall_duration_ms: number }): string {
+  const dims = Object.entries(r.totals).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ');
+  const parts = [`${r.span_count} spans, wall ${fmt(r.wall_duration_ms)}ms`];
+  if (dims) parts.push(dims);
+  if (r.error_count) parts.push(`${r.error_count} errors`);
+  return parts.join(' | ');
+}
+
+function summarizeHotspots(r: { dimension: string; entries: Array<{ name: string; pct_of_total: number; patterns: unknown[] }> }): string {
+  if (!r.entries.length) return `No hotspots for ${r.dimension}.`;
+  const top = r.entries[0];
+  const patCount = r.entries.reduce((s, e) => s + e.patterns.length, 0);
+  let line = `Top hotspot: ${top.name} (${top.pct_of_total.toFixed(1)}% of ${r.dimension})`;
+  if (r.entries.length > 1) line += `. ${r.entries.length} entries total`;
+  if (patCount) line += `. ${patCount} anti-pattern${patCount > 1 ? 's' : ''} detected`;
+  return line + '.';
+}
+
+function summarizeBottlenecks(r: { dimension: string; entries: Array<{ name: string; pct_of_total: number; impact_score: number }> }): string {
+  if (!r.entries.length) return `No bottlenecks for ${r.dimension}.`;
+  const top = r.entries[0];
+  return `#1 bottleneck: ${top.name} (${top.pct_of_total.toFixed(1)}% of ${r.dimension}, impact ${top.impact_score.toFixed(2)}). ${r.entries.length} total.`;
+}
+
+function summarizeWaste(r: { total_savings: Record<string, number>; items: Array<{ pattern: string }> }): string {
+  if (!r.items.length) return 'No waste detected.';
+  const savings = Object.entries(r.total_savings).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ');
+  return `${r.items.length} waste item${r.items.length > 1 ? 's' : ''} found${savings ? ` (potential savings: ${savings})` : ''}.`;
+}
+
+function summarizeExplain(r: { span: { name: string; duration_ms: number; error?: string }; children: unknown[]; patterns: unknown[]; recommendations: string[] }): string {
+  let line = `${r.span.name}: ${fmt(r.span.duration_ms)}ms`;
+  if (r.span.error) line += ` [ERROR]`;
+  line += `, ${r.children.length} children`;
+  if (r.patterns.length) line += `, ${r.patterns.length} pattern${r.patterns.length > 1 ? 's' : ''}`;
+  if (r.recommendations.length) line += `, ${r.recommendations.length} recommendation${r.recommendations.length > 1 ? 's' : ''}`;
+  return line + '.';
+}
+
+function withHeadline(headline: string, result: unknown): { content: Array<{ type: 'text'; text: string }> } {
+  return {
+    content: [
+      { type: 'text' as const, text: headline },
+      { type: 'text' as const, text: JSON.stringify(result) },
+    ],
+  };
+}
 
 export function createServer(): McpServer {
   const server = new McpServer({
@@ -105,7 +163,7 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = profileSummary(state.builder.profile, args);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+      return withHeadline(summarizeSummary(result), result);
     },
   );
 
@@ -128,7 +186,7 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = findHotspots(state.builder.profile, args, state.registry);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+      return withHeadline(summarizeHotspots(result), result);
     },
   );
 
@@ -149,7 +207,7 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = explainSpan(state.builder.profile, args, state.registry);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+      return withHeadline(summarizeExplain(result), result);
     },
   );
 
@@ -175,7 +233,7 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = findWaste(state.builder.profile, state.registry, args);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+      return withHeadline(summarizeWaste(result), result);
     },
   );
 
@@ -263,7 +321,7 @@ export function createServer(): McpServer {
     'export_profile',
     {
       description:
-        "Export the current profile to a standard format for visualization. Supports 'collapsed' (for flamegraph tools) and 'speedscope' (for speedscope.app). Returns the data as a string or writes to file.",
+        "Export the current profile to a standard format for visualization. Supports 'collapsed' (for flamegraph tools), 'speedscope' (for speedscope.app), and 'chrome_trace' (for Perfetto UI / chrome://tracing). Returns the data as a string or writes to file.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -271,7 +329,7 @@ export function createServer(): McpServer {
         openWorldHint: true,
       },
       inputSchema: {
-        format: z.enum(['collapsed', 'speedscope']).describe('Export format'),
+        format: z.enum(['collapsed', 'speedscope', 'chrome_trace']).describe('Export format'),
         dimension: z.string().optional().describe('Value type key to export (default: first value type). Only used for collapsed format.'),
         include_idle: z.boolean().optional().describe('Include idle (user_input:) spans. Only used for speedscope format. Default: false.'),
         output_path: z.string().optional().describe('File path to write. If omitted, returns data inline.'),
@@ -281,6 +339,8 @@ export function createServer(): McpServer {
       let data: string;
       if (args.format === 'speedscope') {
         data = exportSpeedscope(state.builder.profile, { includeIdle: args.include_idle });
+      } else if (args.format === 'chrome_trace') {
+        data = JSON.stringify(exportChromeTrace(state.builder.profile, { include_idle: args.include_idle }));
       } else {
         data = exportCollapsed(state.builder.profile, args.dimension ?? 0);
       }
@@ -346,7 +406,7 @@ export function createServer(): McpServer {
     },
     (args) => {
       const result = findBottlenecks(state.builder.profile, args);
-      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+      return withHeadline(summarizeBottlenecks(result), result);
     },
   );
 
@@ -444,6 +504,164 @@ export function createServer(): McpServer {
     },
   );
 
+  // ── Baseline & diff tools (T4.1-4.3) ──────────────────────────────
+
+  server.registerTool(
+    'save_baseline',
+    {
+      description:
+        "Snapshot the current profile as a named baseline for future comparison. " +
+        "Call this before and after optimizations to measure improvement. " +
+        "The baseline is saved to the project's .tracemeld/baselines/ directory as a compact digest.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      inputSchema: {
+        name: z.string().describe('Baseline name, e.g. "auth-refactor-before" or "v2.1-release"'),
+        checkpoint: z.enum(['before', 'after', 'baseline', 'release', 'custom'])
+          .describe('What this checkpoint represents in the optimization lifecycle'),
+        task: z.string().optional().describe('Description of the task or change being measured'),
+        commit: z.string().optional().describe('Git commit hash, if known'),
+        tags: z.record(z.string(), z.unknown()).optional().describe('Additional metadata'),
+        output_dir: z.string().optional()
+          .describe('Directory to save baseline. Default: .tracemeld/baselines/'),
+      },
+    },
+    async (args) => {
+      // Lazy import to avoid circular dep issues during module load
+      const { exportBaseline } = await import('./exporters/baseline.js');
+      const dir = args.output_dir ?? '.tracemeld/baselines';
+      mkdirSync(dir, { recursive: true });
+      const safeName = args.name.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const filePath = join(dir, `${safeName}.baseline.json`);
+      const digest = exportBaseline(state.builder.profile, {
+        checkpoint: args.checkpoint,
+        task: args.task,
+        commit: args.commit,
+        ...args.tags,
+      }, state.registry);
+      const json = JSON.stringify(digest, null, 2);
+      writeFileSync(filePath, json, 'utf-8');
+      const headline = Object.entries(digest.totals).map(([k, v]) => `${k}: ${fmt(v)}`).join(', ');
+      return withHeadline(
+        `Baseline saved: ${filePath} (${Buffer.byteLength(json)}B). ${headline}`,
+        { file_path: filePath, size_bytes: Buffer.byteLength(json), totals: digest.totals, stats: digest.stats },
+      );
+    },
+  );
+
+  server.registerTool(
+    'list_baselines',
+    {
+      description:
+        "List available baselines in the project's .tracemeld/baselines/ directory. " +
+        "Shows name, checkpoint type, creation date, task description, and headline totals. " +
+        "Use this to find the right baseline for diff_profile comparison.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      inputSchema: {
+        baselines_dir: z.string().optional()
+          .describe('Directory to scan. Default: .tracemeld/baselines/'),
+      },
+    },
+    (args) => {
+      const dir = args.baselines_dir ?? '.tracemeld/baselines';
+      if (!existsSync(dir)) {
+        return withHeadline('No baselines directory found.', { baselines: [] });
+      }
+      const files = readdirSync(dir).filter((f) => f.endsWith('.baseline.json')).sort();
+      const baselines = files.map((f) => {
+        try {
+          const data = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as import('./exporters/baseline-types.js').BaselineDigest;
+          return {
+            file: f,
+            path: join(dir, f),
+            checkpoint: data.tags.checkpoint,
+            task: data.tags.task,
+            commit: data.tags.commit,
+            created_at: data.created_at,
+            totals: data.totals,
+            stats: data.stats,
+          };
+        } catch {
+          return { file: f, path: join(dir, f), error: 'Failed to parse' };
+        }
+      }).sort((a, b) => ((b as { created_at?: number }).created_at ?? 0) - ((a as { created_at?: number }).created_at ?? 0));
+
+      return withHeadline(
+        `${baselines.length} baseline${baselines.length !== 1 ? 's' : ''} found in ${dir}.`,
+        { baselines },
+      );
+    },
+  );
+
+  server.registerTool(
+    'diff_profile',
+    {
+      description:
+        "Compare the current profile against a stored baseline. Shows what got faster, " +
+        "what got slower, and by how much — across all cost dimensions. " +
+        "Use after save_baseline to measure the impact of an optimization. " +
+        "Identifies regressions even when the overall improved.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      inputSchema: {
+        baseline: z.string().describe('Path to a .baseline.json file, or baseline name to resolve from .tracemeld/baselines/'),
+        dimension: z.string().optional().describe('Primary dimension to rank diffs by. Default: first value type.'),
+        min_delta_pct: z.number().optional().describe('Minimum percentage change to report. Default: 5.'),
+        normalize: z.boolean().optional().describe('Normalize totals before comparison. Default: true.'),
+      },
+    },
+    async (args) => {
+      const { exportBaseline } = await import('./exporters/baseline.js');
+
+      // Resolve baseline path
+      let baselinePath = args.baseline;
+      if (!baselinePath.endsWith('.baseline.json')) {
+        const safeName = baselinePath.replace(/[^a-zA-Z0-9_-]/g, '-');
+        baselinePath = join('.tracemeld/baselines', `${safeName}.baseline.json`);
+      }
+      if (!existsSync(baselinePath)) {
+        return { content: [{ type: 'text' as const, text: `Baseline not found: ${baselinePath}` }] };
+      }
+
+      const beforeDigest = JSON.parse(readFileSync(baselinePath, 'utf-8')) as import('./exporters/baseline-types.js').BaselineDigest;
+      const afterDigest = exportBaseline(state.builder.profile, { checkpoint: 'current' }, state.registry);
+
+      const result = diffBaselines(beforeDigest, afterDigest, {
+        dimension: args.dimension,
+        min_delta_pct: args.min_delta_pct,
+        normalize: args.normalize,
+      });
+
+      // Build headline summary
+      const parts: string[] = [];
+      for (const [dim, h] of Object.entries(result.headline)) {
+        const sign = h.delta >= 0 ? '+' : '';
+        parts.push(`${dim}: ${sign}${h.delta_pct.toFixed(1)}%`);
+      }
+      let headline = parts.join(', ');
+      if (result.regressions.length) headline += ` | ${result.regressions.length} regressions`;
+      if (result.improvements.length) headline += ` | ${result.improvements.length} improvements`;
+      if (result.normalized) headline += ` (normalized, factor: ${result.norm_factor?.toFixed(2)})`;
+
+      return withHeadline(headline, result);
+    },
+  );
+
+  // ── Prompts ──────────────────────────────────────────────────────
+
   server.registerPrompt(
     'performance_review',
     {
@@ -457,15 +675,18 @@ export function createServer(): McpServer {
           type: 'text' as const,
           text: `You have a performance profile loaded in tracemeld. Analyze it step by step:
 
-1. Call profile_summary with group_by="kind" to get headline numbers.
-2. Look at which group has the highest pct_of_total on any dimension.
-3. Call bottleneck on that dimension with top_n=5 to find the biggest optimization targets.
-4. For each bottleneck that has a source field, read the source file at that line to understand the implementation. Use LSP hover and findReferences to understand the function's role.
-5. Call hotpaths on the same dimension to see complete call chains.
-6. Call find_waste to identify work that didn't contribute to the result.
-7. Synthesize your findings into:
+1. Call list_baselines to check if previous baselines exist.
+2. Call profile_summary with group_by="kind" to get headline numbers.
+3. Look at which group has the highest pct_of_total on any dimension.
+4. Call bottleneck on that dimension with top_n=5 to find the biggest optimization targets.
+5. For each bottleneck that has a source field, read the source file at that line to understand the implementation.
+6. Call hotpaths on the same dimension to see complete call chains.
+7. Call find_waste to identify work that didn't contribute to the result.
+8. If baselines exist from step 1, call diff_profile against the most recent one to see what changed.
+9. Synthesize your findings into:
    - What's the #1 bottleneck and what does the source code reveal about why?
    - What work was wasted (with specific anti-patterns)?
+   - If a baseline comparison was available: what improved, what regressed?
    - Concrete recommendations with code-level specificity (cite file:line locations).`,
         },
       }],
@@ -493,6 +714,41 @@ export function createServer(): McpServer {
 3. Call hotpaths with dimension="${dimension}" to see the full call chains.
 4. Call find_waste to identify redundant work.
 5. Produce a ranked list of optimizations, ordered by expected savings on ${dimension}. For each recommendation, cite the specific file:line and explain what to change.`,
+        },
+      }],
+    }),
+  );
+
+  server.registerPrompt(
+    'optimization_loop',
+    {
+      title: 'Optimization Loop',
+      description: 'Full before/after optimization cycle: baseline → analyze → change → re-profile → compare. Encodes the complete autonomous optimization workflow.',
+      argsSchema: {
+        task: z.string().describe('What optimization you are about to perform, e.g. "reduce npm test wall time"'),
+      },
+    },
+    ({ task }) => ({
+      messages: [{
+        role: 'user' as const,
+        content: {
+          type: 'text' as const,
+          text: `Optimization loop for: ${task}
+
+Phase 1 — Baseline:
+1. Call save_baseline with checkpoint="before" and task="${task}".
+2. Call profile_summary, bottleneck, and find_waste to identify optimization targets.
+3. Summarize the current state and what you plan to optimize.
+
+Phase 2 — Implement changes:
+4. Make the code changes based on your analysis.
+5. Re-run the workload and re-import the new profile via import_profile.
+
+Phase 3 — Compare:
+6. Call save_baseline with checkpoint="after" and the same task="${task}".
+7. Call diff_profile against the "before" baseline.
+8. Synthesize: what improved, what regressed, what's the net impact across all dimensions?
+9. If regressions exist, explain whether they are acceptable trade-offs or need further work.`,
         },
       }],
     }),
