@@ -75,10 +75,10 @@ describe('importNsightSqlite', () => {
     const data = await createTestDb((db) => {
       db.run(`CREATE TABLE CUPTI_ACTIVITY_KIND_MEMCPY (
         copyKind INTEGER, start INTEGER, end INTEGER,
-        deviceId INTEGER, correlationId INTEGER, bytes INTEGER
+        deviceId INTEGER, streamId INTEGER, correlationId INTEGER, bytes INTEGER
       )`);
       db.run(`INSERT INTO CUPTI_ACTIVITY_KIND_MEMCPY VALUES (
-        1, 5000000, 6000000, 0, 200, 1048576
+        1, 5000000, 6000000, 0, 1, 200, 1048576
       )`);
     });
 

@@ -156,16 +156,17 @@ export async function importNsightSqlite(
         let kernelCount = 0;
         for (const row of result[0].values) {
           if (options?.max_kernels && kernelCount >= options.max_kernels) {
-            // Add warning marker
-            const runtimeLane = getOrCreateLane(
+            // Add warning marker to the kernel lane being truncated
+            const deviceId = row[3] as number;
+            const kernelLane = getOrCreateLane(
               lanesMap,
-              'cuda-runtime',
-              'cuda-runtime',
-              'custom',
+              `gpu-${deviceId}-kernels`,
+              `gpu-${deviceId}-kernels`,
+              'worker',
             );
-            runtimeLane.markers.push({
+            kernelLane.markers.push({
               timestamp: nsToMs(row[1] as number),
-              name: `max_kernels limit reached (${options.max_kernels})`,
+              name: `Truncated: imported ${kernelCount} of ${result[0].values.length} kernel events (max_kernels=${options.max_kernels})`,
               severity: 'warning',
             });
             break;
@@ -251,7 +252,7 @@ export async function importNsightSqlite(
     if (tableExists(db, 'CUPTI_ACTIVITY_KIND_MEMCPY')) {
       const filter = timeRangeFilter(options, 'start', 'end');
       const result = db.exec(
-        `SELECT copyKind, start, end, deviceId, correlationId, bytes
+        `SELECT copyKind, start, end, deviceId, streamId, correlationId, bytes
          FROM CUPTI_ACTIVITY_KIND_MEMCPY WHERE 1=1${filter}`,
       );
       if (result.length > 0) {
@@ -260,8 +261,9 @@ export async function importNsightSqlite(
           const startNs = row[1] as number;
           const endNs = row[2] as number;
           const deviceId = row[3] as number;
-          const correlationId = row[4] as number;
-          const bytes = row[5] as number;
+          const streamId = row[4] as number;
+          const correlationId = row[5] as number;
+          const bytes = row[6] as number;
 
           const kindLabel = COPY_KIND_LABELS[copyKind] ?? `kind${copyKind}`;
           const laneId = `gpu-${deviceId}-memory`;
@@ -283,7 +285,7 @@ export async function importNsightSqlite(
             start_time: nsToMs(startNs),
             end_time: nsToMs(endNs),
             values: v,
-            args: { deviceId, correlationId, copyKind, bytes, start_ns: startNs, end_ns: endNs },
+            args: { deviceId, streamId, correlationId, copyKind, bytes, start_ns: startNs, end_ns: endNs },
             children: [],
           };
           lane.spans.push(span);
@@ -434,9 +436,10 @@ export async function importNsightSqlite(
         }
       }
 
-      // Marks: eventType 34
+      // Marks: eventType 34 (instant events — filter on start only)
+      const markFilter = timeRangeFilter(options, 'start', 'start');
       const markResult = db.exec(
-        `SELECT textId, text, start FROM NVTX_EVENTS WHERE eventType = 34${filter.replace(/AND end /g, 'AND start ')}`,
+        `SELECT textId, text, start FROM NVTX_EVENTS WHERE eventType = 34${markFilter}`,
       );
       if (markResult.length > 0) {
         for (const row of markResult[0].values) {
