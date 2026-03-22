@@ -11,6 +11,7 @@ import { findWaste } from './analysis/waste.js';
 import { importProfile, mergeImportedProfile, buildImportResult } from './importers/import.js';
 import { importNsightSqlite } from './importers/nsight-sqlite.js';
 import { exportCollapsed } from './exporters/collapsed.js';
+import { exportSpeedscope } from './exporters/speedscope.js';
 import { findHotpaths } from './analysis/hotpaths.js';
 import { findBottlenecks } from './analysis/bottleneck.js';
 import { findSpinpaths } from './analysis/spinpaths.js';
@@ -37,6 +38,12 @@ export function createServer(): McpServer {
     {
       description:
         "Mark the start or end of a unit of work. Use this to instrument your own operations while you work: thinking, tool calls, file reads, bash commands, test runs. Call with action 'begin' before starting, 'end' when done. Cost data (tokens, time, bytes) goes on the 'end' call. Nesting is automatic.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
       inputSchema: {
         action: z.enum(['begin', 'end']),
         kind: z.string(),
@@ -57,6 +64,12 @@ export function createServer(): McpServer {
     {
       description:
         "Record a notable instant: a test failure, a decision point, context window pressure, an unexpected result. Not a duration \u2014 a moment.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
       inputSchema: {
         what: z.string(),
         severity: z.enum(['info', 'warning', 'error']).optional(),
@@ -74,6 +87,12 @@ export function createServer(): McpServer {
     {
       description:
         'Get headline performance numbers for a session: total time, tokens, cost, errors. Group by turn, operation kind, or execution lane to see where effort concentrated. Start here when you want to understand how a session went.',
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         group_by: z.enum(['kind', 'turn', 'lane']).optional(),
         time_range: z
@@ -95,6 +114,12 @@ export function createServer(): McpServer {
     {
       description:
         'Find the most expensive operations by any dimension: wall time, tokens consumed, tokens generated, dollar cost, or error count. Returns a ranked list with ancestry chains. Use after profile_summary identifies a concentration of cost.',
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         dimension: z.string(),
         top_n: z.number().optional(),
@@ -112,6 +137,12 @@ export function createServer(): McpServer {
     {
       description:
         'Deep-dive into one expensive span. Shows its child breakdown, the causal chain of what happened, and any detected anti-patterns. Use when hotspots identified a specific span to investigate.',
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         span_id: z.string(),
       },
@@ -127,6 +158,12 @@ export function createServer(): McpServer {
     {
       description:
         'Identify work that didn\'t contribute to the final result: retries, unused reads, blind edits. Each waste item includes counterfactual savings and a concrete recommendation.',
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         time_range: z
           .object({
@@ -147,6 +184,12 @@ export function createServer(): McpServer {
     {
       description:
         "Load profiling data from a file path or inline string. Auto-detects format (collapsed stacks, Chrome trace) or accepts a hint. Use when you want to analyze an existing profile.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         source: z.string().describe('File path or inline profile data string'),
         format: z.enum(['auto', 'collapsed', 'chrome_trace', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite']).optional(),
@@ -220,15 +263,27 @@ export function createServer(): McpServer {
     'export_profile',
     {
       description:
-        "Export the current profile to a standard format for visualization. Currently supports 'collapsed' (for flamegraph tools). Returns the data as a string or writes to file.",
+        "Export the current profile to a standard format for visualization. Supports 'collapsed' (for flamegraph tools) and 'speedscope' (for speedscope.app). Returns the data as a string or writes to file.",
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       inputSchema: {
-        format: z.enum(['collapsed']).describe('Export format'),
-        dimension: z.string().optional().describe('Value type key to export (default: first value type)'),
+        format: z.enum(['collapsed', 'speedscope']).describe('Export format'),
+        dimension: z.string().optional().describe('Value type key to export (default: first value type). Only used for collapsed format.'),
+        include_idle: z.boolean().optional().describe('Include idle (user_input:) spans. Only used for speedscope format. Default: false.'),
         output_path: z.string().optional().describe('File path to write. If omitted, returns data inline.'),
       },
     },
     (args) => {
-      const data = exportCollapsed(state.builder.profile, args.dimension ?? 0);
+      let data: string;
+      if (args.format === 'speedscope') {
+        data = exportSpeedscope(state.builder.profile, { includeIdle: args.include_idle });
+      } else {
+        data = exportCollapsed(state.builder.profile, args.dimension ?? 0);
+      }
 
       if (args.output_path) {
         writeFileSync(args.output_path, data, 'utf-8');
@@ -263,6 +318,12 @@ export function createServer(): McpServer {
     'hotpaths',
     {
       description: "Find the critical call paths that account for the most cost. Unlike hotspots (flat ranking), this shows complete root-to-leaf paths. Use to understand which call chains dominate execution.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: { dimension: z.string(), top_n: z.number().optional() },
     },
     (args) => {
@@ -275,6 +336,12 @@ export function createServer(): McpServer {
     'bottleneck',
     {
       description: "Find the single operations where optimization would have the most impact. Combines self-cost with path criticality — 'if you could speed up one thing, what would move the needle?'",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: { dimension: z.string(), top_n: z.number().optional() },
     },
     (args) => {
@@ -287,6 +354,12 @@ export function createServer(): McpServer {
     'spinpaths',
     {
       description: "Detect operations with high wall time but low useful output — busy-waiting, spinning, or inefficient processing. Flags spans that spent significant time without producing tokens, bytes, or other measurable work.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: { min_wall_ms: z.number().optional() },
     },
     (args) => {
@@ -299,6 +372,12 @@ export function createServer(): McpServer {
     'starvations',
     {
       description: "Detect threads/lanes that are idle while others are active — indicates lock contention, unbalanced work, or serialization. Most useful with multi-threaded imported profiles (Gecko, Chrome trace).",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: { min_idle_pct: z.number().optional() },
     },
     (args) => {
@@ -312,6 +391,12 @@ export function createServer(): McpServer {
     {
       description:
         "Zoom into a single function in the call graph. Shows its cost, who calls it (callers ranked by time spent), and what it calls (callees ranked by time spent). Use when you know which function to investigate and want to understand its role in the profile — where pressure comes from and where it flows.",
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {
         function_name: z.string().describe('Function name to focus on (exact or substring match)'),
         dimension: z.string().optional().describe('Cost dimension to rank by (default: first value type)'),
@@ -329,6 +414,12 @@ export function createServer(): McpServer {
     {
       description:
         'Check whether the running tracemeld version matches the latest published on npm. Reports both versions so you can tell the user if an upgrade is available.',
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       inputSchema: {},
     },
     async () => {

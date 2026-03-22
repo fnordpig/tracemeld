@@ -29,7 +29,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
   }
 
   const frameTable = new FrameTable();
-  const lanesMap = new Map<string, { lane: Lane; openSpans: Map<string, Span[]> }>();
+  const lanesMap = new Map<string, { lane: Lane; openSpans: Map<string, Span[]>; nestingStack: Span[] }>();
   let spanIdCounter = 0;
 
   // First pass: collect M (metadata) events for lane names
@@ -49,7 +49,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
     }
   }
 
-  function getOrCreateLane(pid: number, tid: number): { lane: Lane; openSpans: Map<string, Span[]> } {
+  function getOrCreateLane(pid: number, tid: number): { lane: Lane; openSpans: Map<string, Span[]>; nestingStack: Span[] } {
     const key = `${pid}:${tid}`;
     let entry = lanesMap.get(key);
     if (!entry) {
@@ -64,7 +64,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
         spans: [],
         markers: [],
       };
-      entry = { lane, openSpans: new Map<string, Span[]>() };
+      entry = { lane, openSpans: new Map<string, Span[]>(), nestingStack: [] };
       lanesMap.set(key, entry);
     }
     return entry;
@@ -97,17 +97,22 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
         const entry = getOrCreateLane(pid, tid);
         const frameIdx = frameTable.getOrInsert({ name: event.name ?? '<unknown>' });
         const startMs = (event.ts ?? 0) / 1000;
+        const parentSpan = entry.nestingStack.length > 0 ? entry.nestingStack[entry.nestingStack.length - 1] : null;
         const span: Span = {
           id: `imp_${spanIdCounter++}`,
           frame_index: frameIdx,
-          parent_id: null,
+          parent_id: parentSpan ? parentSpan.id : null,
           start_time: startMs,
           end_time: startMs,
           values: [0],
           args: event.args ?? {},
           children: [],
         };
+        if (parentSpan) {
+          parentSpan.children.push(span.id);
+        }
         entry.lane.spans.push(span);
+        entry.nestingStack.push(span);
         const eventName = event.name ?? '';
         let stack = entry.openSpans.get(eventName);
         if (!stack) {
@@ -127,6 +132,11 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
             const endMs = (event.ts ?? 0) / 1000;
             openSpan.end_time = endMs;
             openSpan.values = [endMs - openSpan.start_time];
+            // Pop from nesting stack — find and remove this span
+            const nestIdx = entry.nestingStack.lastIndexOf(openSpan);
+            if (nestIdx !== -1) {
+              entry.nestingStack.splice(nestIdx, 1);
+            }
           }
           if (stack.length === 0) {
             entry.openSpans.delete(eventName);
@@ -144,6 +154,33 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
         });
         break;
       }
+    }
+  }
+
+  // Post-process: assign parent_id for unparented spans using containment-based nesting
+  for (const entry of lanesMap.values()) {
+    const spans = entry.lane.spans;
+    // Only consider spans not already parented by B/E logic
+    const xSpans = spans.filter((s) => s.parent_id === null);
+    // Sort by start_time asc, then by duration desc (so parent comes before child at same start)
+    xSpans.sort((a, b) => {
+      const startDiff = a.start_time - b.start_time;
+      if (startDiff !== 0) return startDiff;
+      return (b.end_time - b.start_time) - (a.end_time - a.start_time);
+    });
+
+    const nestStack: Span[] = [];
+    for (const span of xSpans) {
+      // Pop spans from stack whose end time <= current span's start time
+      while (nestStack.length > 0 && nestStack[nestStack.length - 1].end_time <= span.start_time) {
+        nestStack.pop();
+      }
+      if (nestStack.length > 0) {
+        const parent = nestStack[nestStack.length - 1];
+        span.parent_id = parent.id;
+        parent.children.push(span.id);
+      }
+      nestStack.push(span);
     }
   }
 
