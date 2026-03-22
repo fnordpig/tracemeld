@@ -207,4 +207,44 @@ describe('importNsightSqlite', () => {
     expect(frame.name).toBe('cublas:cublasSgemm');
     expect(span.values[0]).toBeCloseTo(1); // 1ms
   });
+
+  it('succeeds with only StringIds and NVTX_EVENTS', async () => {
+    const data = await createTestDb((db) => {
+      db.run(`CREATE TABLE NVTX_EVENTS (
+        start INTEGER, end INTEGER, globalTid INTEGER,
+        textId INTEGER, text TEXT,
+        eventType INTEGER, rangeId INTEGER,
+        domainId INTEGER, category INTEGER, color INTEGER
+      )`);
+      db.run("INSERT INTO NVTX_EVENTS VALUES (1000000, 2000000, 1, NULL, 'test_range', 59, 0, 0, 0, 0)");
+    });
+
+    const result = await importNsightSqlite(data, 'test');
+    expect(result.profile.lanes).toHaveLength(1);
+    expect(result.profile.lanes[0].id).toBe('nvtx');
+  });
+
+  it('caps kernel import at max_kernels and adds warning marker', async () => {
+    const data = await createTestDb((db) => {
+      db.run("INSERT INTO StringIds VALUES (1, 'kernel_fn')");
+      db.run(`CREATE TABLE CUPTI_ACTIVITY_KIND_KERNEL (
+        demangledName INTEGER, start INTEGER, end INTEGER,
+        deviceId INTEGER, streamId INTEGER, contextId INTEGER, correlationId INTEGER,
+        gridX INTEGER, gridY INTEGER, gridZ INTEGER,
+        blockX INTEGER, blockY INTEGER, blockZ INTEGER,
+        staticSharedMemory INTEGER, dynamicSharedMemory INTEGER, registersPerThread INTEGER
+      )`);
+      for (let i = 0; i < 50; i++) {
+        db.run(`INSERT INTO CUPTI_ACTIVITY_KIND_KERNEL VALUES (1, ${i * 1000000}, ${(i + 1) * 1000000}, 0, 1, 0, ${i}, 1, 1, 1, 1, 1, 1, 0, 0, 32)`);
+      }
+    });
+
+    const result = await importNsightSqlite(data, 'test', { max_kernels: 10 });
+    const kernelLane = result.profile.lanes.find(l => l.id === 'gpu-0-kernels');
+    expect(kernelLane).toBeDefined();
+    expect(kernelLane!.spans).toHaveLength(10);
+    expect(kernelLane!.markers).toHaveLength(1);
+    expect(kernelLane!.markers[0].severity).toBe('warning');
+    expect(kernelLane!.markers[0].name).toContain('Truncated');
+  });
 });
