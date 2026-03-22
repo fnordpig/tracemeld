@@ -30,30 +30,13 @@ export function importProfile(
   }
 
   const imported = runImporter(content, name, format, symsJson);
-
-  let samplesAdded = 0;
-  let spansAdded = 0;
-  for (const lane of imported.profile.lanes) {
-    samplesAdded += lane.samples.length;
-    spansAdded += lane.spans.length;
-  }
-
-  const framesAdded = imported.profile.frames.length;
-  const lanesAdded = imported.profile.lanes.length;
-  const valueTypes = imported.profile.value_types.map((vt) => vt.key);
+  const result = buildImportResult(imported);
 
   if (mergeInto) {
     mergeImportedProfile(mergeInto, imported);
   }
 
-  return {
-    format_detected: format,
-    lanes_added: lanesAdded,
-    frames_added: framesAdded,
-    samples_added: samplesAdded,
-    spans_added: spansAdded,
-    value_types: valueTypes,
-  };
+  return result;
 }
 
 function runImporter(content: string, name: string, format: ImportFormat, symsJson?: string): ImportedProfile {
@@ -66,6 +49,7 @@ function runImporter(content: string, name: string, format: ImportFormat, symsJs
       return importGecko(content, name, symsJson);
     case 'pprof':
       return importPprof(content, name);
+    case 'nsight_sqlite':
     case 'speedscope':
       throw new Error(`Format '${format}' is not yet implemented`);
     default:
@@ -73,7 +57,24 @@ function runImporter(content: string, name: string, format: ImportFormat, symsJs
   }
 }
 
-function mergeImportedProfile(builder: ProfileBuilder, imported: ImportedProfile): void {
+export function buildImportResult(imported: ImportedProfile): ImportProfileResult {
+  let samplesAdded = 0;
+  let spansAdded = 0;
+  for (const lane of imported.profile.lanes) {
+    samplesAdded += lane.samples.length;
+    spansAdded += lane.spans.length;
+  }
+  return {
+    format_detected: imported.format,
+    lanes_added: imported.profile.lanes.length,
+    frames_added: imported.profile.frames.length,
+    samples_added: samplesAdded,
+    spans_added: spansAdded,
+    value_types: imported.profile.value_types.map((vt) => vt.key),
+  };
+}
+
+export function mergeImportedProfile(builder: ProfileBuilder, imported: ImportedProfile): void {
   // Reconcile value types: build a mapping from imported indices to builder indices
   const valueIndexMap = new Map<number, number>();
   for (let i = 0; i < imported.profile.value_types.length; i++) {
