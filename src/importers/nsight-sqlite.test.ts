@@ -3,6 +3,8 @@ import { describe, it, expect } from 'vitest';
 import initSqlJs, { type Database } from 'sql.js';
 import { importNsightSqlite } from './nsight-sqlite.js';
 import type { Lane } from '../model/types.js';
+import { ProfileBuilder } from '../model/profile.js';
+import { mergeImportedProfile } from './import.js';
 
 describe('sql.js WASM loading', () => {
   it('initializes sql.js and creates an in-memory database', async () => {
@@ -246,5 +248,43 @@ describe('importNsightSqlite', () => {
     expect(kernelLane!.markers).toHaveLength(1);
     expect(kernelLane!.markers[0].severity).toBe('warning');
     expect(kernelLane!.markers[0].name).toContain('Truncated');
+  });
+
+  it('merges nsight data into existing LLM profile builder', async () => {
+    const builder = new ProfileBuilder('test-session');
+
+    const data = await createTestDb((db) => {
+      db.run("INSERT INTO StringIds VALUES (1, 'matmul_f32')");
+      // Use the same column order as other kernel tests in this file
+      db.run(`CREATE TABLE CUPTI_ACTIVITY_KIND_KERNEL (
+        demangledName INTEGER, start INTEGER, end INTEGER,
+        deviceId INTEGER, streamId INTEGER, contextId INTEGER, correlationId INTEGER,
+        gridX INTEGER, gridY INTEGER, gridZ INTEGER,
+        blockX INTEGER, blockY INTEGER, blockZ INTEGER,
+        staticSharedMemory INTEGER, dynamicSharedMemory INTEGER, registersPerThread INTEGER
+      )`);
+      db.run('INSERT INTO CUPTI_ACTIVITY_KIND_KERNEL VALUES (1, 1000000, 2000000, 0, 1, 0, 100, 128, 1, 1, 256, 1, 1, 0, 1024, 32)');
+    });
+
+    const imported = await importNsightSqlite(data, 'test');
+    mergeImportedProfile(builder, imported);
+
+    // LLM value types should still be present, plus GPU-specific ones
+    const keys = builder.profile.value_types.map(vt => vt.key);
+    expect(keys).toContain('wall_ms');       // shared between LLM and GPU
+    expect(keys).toContain('input_tokens');  // LLM-only
+    expect(keys).toContain('threads');       // GPU-only
+
+    // GPU span should have 0 for LLM-only dimensions
+    const gpuLane = builder.profile.lanes.find(l => l.id.includes('gpu-0-kernels'));
+    expect(gpuLane).toBeDefined();
+    const span = gpuLane!.spans[0];
+    expect(span.values.length).toBe(builder.profile.value_types.length);
+
+    const tokensIdx = builder.profile.value_types.findIndex(vt => vt.key === 'input_tokens');
+    expect(span.values[tokensIdx]).toBe(0);
+
+    const threadsIdx = builder.profile.value_types.findIndex(vt => vt.key === 'threads');
+    expect(span.values[threadsIdx]).toBeGreaterThan(0);
   });
 });
