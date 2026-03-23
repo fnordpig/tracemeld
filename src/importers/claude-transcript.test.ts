@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { importClaudeTranscript } from './claude-transcript.js';
 import { detectFormat } from './detect.js';
+import { importProfile } from './import.js';
+import { ProfileBuilder } from '../model/profile.js';
 
 function makeTranscript(lines: Record<string, unknown>[]): string {
   return lines.map((l) => JSON.stringify(l)).join('\n');
@@ -301,6 +303,59 @@ describe('importClaudeTranscript', () => {
     // The idle span should capture the 5-minute gap (> 200s = 200000ms)
     const gap = idleSpans.find((s) => s.values[0] > 200000);
     expect(gap).toBeDefined();
+  });
+
+  it('importProfile pipeline: auto-detects, imports, and returns correct metadata', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 'test-session',
+        message: { role: 'user', content: 'hello' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 'test-session',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Bash',
+              input: { command: 'echo hi', description: 'Print hi' },
+            },
+          ],
+          usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 500 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:03.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 'test-session',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 't1', content: 'hi' }],
+        },
+      },
+    ]);
+
+    const builder = new ProfileBuilder('test-session');
+    const result = importProfile(content, 'test-session', 'auto', builder);
+
+    expect(result.format_detected).toBe('claude_transcript');
+    expect(result.spans_added).toBeGreaterThan(0);
+    expect(result.value_types).toContain('wall_ms');
+    expect(result.value_types).toContain('input_tokens');
+    expect(result.value_types).toContain('cost_usd');
   });
 
   it('excludes idle spans when include_idle is false', () => {
