@@ -252,6 +252,13 @@ export function createServer(): McpServer {
         source: z.string().describe('File path or inline profile data string'),
         format: z.enum(['auto', 'collapsed', 'chrome_trace', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite']).optional(),
         lane_name: z.string().optional(),
+        value_type: z.string().optional().describe(
+          'Override value type key for collapsed format imports, e.g. "wall_ms". ' +
+          'Collapsed stacks have no unit metadata; use this when you know what the values represent.',
+        ),
+        value_unit: z.enum(['nanoseconds', 'microseconds', 'milliseconds', 'seconds', 'bytes', 'none']).optional().describe(
+          'Unit for the value type override. Default: "milliseconds" if value_type is set, else "none".',
+        ),
         nsight_options: z.object({
           max_kernels: z.number().optional(),
           time_range: z.object({
@@ -311,7 +318,13 @@ export function createServer(): McpServer {
       } else {
         content = args.source;
       }
-      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder, symsJson);
+      const importOpts = args.value_type ? {
+        collapsed: {
+          value_type_key: args.value_type,
+          value_type_unit: args.value_unit ?? 'milliseconds' as const,
+        },
+      } : undefined;
+      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder, symsJson, importOpts);
       state.invalidatePatternCache();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
@@ -538,10 +551,10 @@ export function createServer(): McpServer {
       const safeName = args.name.replace(/[^a-zA-Z0-9_-]/g, '-');
       const filePath = join(dir, `${safeName}.baseline.json`);
       const digest = exportBaseline(state.builder.profile, {
+        ...args.tags,
         checkpoint: args.checkpoint,
         task: args.task,
         commit: args.commit,
-        ...args.tags,
       }, state.registry);
       const json = JSON.stringify(digest, null, 2);
       writeFileSync(filePath, json, 'utf-8');
@@ -621,6 +634,10 @@ export function createServer(): McpServer {
         dimension: z.string().optional().describe('Primary dimension to rank diffs by. Default: first value type.'),
         min_delta_pct: z.number().optional().describe('Minimum percentage change to report. Default: 5.'),
         normalize: z.boolean().optional().describe('Normalize totals before comparison. Default: true.'),
+        dimension_map: z.record(z.string(), z.string()).optional().describe(
+          'Map dimension keys across profiles, e.g. {"weight":"wall_ms"}. ' +
+          'Default: auto-detects when each side has one non-zero dimension.',
+        ),
       },
     },
     async (args) => {
@@ -643,6 +660,7 @@ export function createServer(): McpServer {
         dimension: args.dimension,
         min_delta_pct: args.min_delta_pct,
         normalize: args.normalize,
+        dimension_map: args.dimension_map ?? 'auto',
       });
 
       // Build headline summary

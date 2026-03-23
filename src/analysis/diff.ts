@@ -18,6 +18,49 @@ export interface DiffOptions {
   normalize?: boolean;
   /** Max regressions/improvements to return. Default: 15. */
   top_n?: number;
+  /**
+   * Map dimension keys across baselines: { from_key: to_key }.
+   * e.g. { weight: 'wall_ms' } treats 'weight' as 'wall_ms' for comparison.
+   * When 'auto', infers a mapping if each side has exactly one non-zero
+   * dimension and they don't overlap. Default: 'auto'.
+   */
+  dimension_map?: Record<string, string> | 'auto';
+}
+
+/**
+ * Resolve dimension mapping between two baselines.
+ * - Explicit map: use as-is
+ * - 'auto' (default): if each side has exactly one non-zero dimension and they
+ *   don't overlap, map the before's dimension to the after's.
+ * Returns a Map<from_key, to_key> that can remap either side's keys.
+ */
+function resolveDimensionMap(
+  before: BaselineDigest,
+  after: BaselineDigest,
+  mapping?: Record<string, string> | 'auto',
+): Map<string, string> {
+  if (mapping !== undefined && mapping !== 'auto') {
+    return new Map(Object.entries(mapping));
+  }
+
+  // Auto-detect: find non-zero dimensions on each side
+  const beforeNonZero = before.value_types
+    .map((vt) => vt.key)
+    .filter((k) => (before.totals[k] ?? 0) > 0);
+  const afterNonZero = after.value_types
+    .map((vt) => vt.key)
+    .filter((k) => (after.totals[k] ?? 0) > 0);
+
+  // Only auto-map when each side has exactly one non-zero dimension and they differ
+  if (
+    beforeNonZero.length === 1 &&
+    afterNonZero.length === 1 &&
+    beforeNonZero[0] !== afterNonZero[0]
+  ) {
+    return new Map([[beforeNonZero[0], afterNonZero[0]]]);
+  }
+
+  return new Map();
 }
 
 /**
@@ -30,17 +73,53 @@ export function diffBaselines(
   after: BaselineDigest,
   options?: DiffOptions,
 ): DiffResult {
-  const dims = after.value_types.map((vt) => vt.key);
+  // Phase 0: Resolve dimension mapping
+  const dimMap = resolveDimensionMap(before, after, options?.dimension_map);
+
+  // Apply mapping: remap before's dimension keys so they align with after's
+  // dimMap maps from_key → to_key (e.g. { weight: 'wall_ms' })
+  // We build remapped value_types and totals for before
+  const remappedBeforeVT = before.value_types.map((vt) => ({
+    ...vt,
+    key: dimMap.get(vt.key) ?? vt.key,
+  }));
+  const remappedBeforeTotals: Record<string, number> = {};
+  for (const [k, v] of Object.entries(before.totals)) {
+    remappedBeforeTotals[dimMap.get(k) ?? k] = v;
+  }
+  // Also remap after's keys (mapping can go either direction)
+  const remappedAfterVT = after.value_types.map((vt) => ({
+    ...vt,
+    key: dimMap.get(vt.key) ?? vt.key,
+  }));
+  const remappedAfterTotals: Record<string, number> = {};
+  for (const [k, v] of Object.entries(after.totals)) {
+    remappedAfterTotals[dimMap.get(k) ?? k] = v;
+  }
+
+  // Build unified dimension set from both baselines, preserving order (after first, then any before-only)
+  const afterDims = remappedAfterVT.map((vt) => vt.key);
+  const beforeDims = remappedBeforeVT.map((vt) => vt.key);
+  const dimSet = new Set(afterDims);
+  for (const d of beforeDims) dimSet.add(d);
+  const dims = [...dimSet];
+
+  // Build positional index maps: remapped dimension key → index in each baseline's self_cost/total_cost arrays
+  // The arrays are still positionally indexed by the original value_types order
+  const beforeDimIdx = new Map<string, number>();
+  for (let i = 0; i < remappedBeforeVT.length; i++) beforeDimIdx.set(remappedBeforeVT[i].key, i);
+  const afterDimIdx = new Map<string, number>();
+  for (let i = 0; i < remappedAfterVT.length; i++) afterDimIdx.set(remappedAfterVT[i].key, i);
+
   const firstDim = dims.length > 0 ? dims[0] : 'wall_ms';
   const primaryDim = options?.dimension ?? firstDim;
-  const primaryIdx = dims.indexOf(primaryDim);
   const minDeltaPct = options?.min_delta_pct ?? 5;
   const normalize = options?.normalize ?? true;
   const topN = options?.top_n ?? 15;
 
   // Phase 1: Compute per-dimension totals for normalization
-  const beforeTotals: Record<string, number> = { ...before.totals };
-  const afterTotals: Record<string, number> = { ...after.totals };
+  const beforeTotals: Record<string, number> = { ...remappedBeforeTotals };
+  const afterTotals: Record<string, number> = { ...remappedAfterTotals };
 
   // Compute normalization factors per dimension
   const normFactors: Record<string, number> = {};
@@ -68,9 +147,6 @@ export function diffBaselines(
   const newStacks: DiffEntry[] = [];
   const removedStacks: DiffEntry[] = [];
 
-  // Build parent stack map for cost shift detection
-  const parentSelfDelta = new Map<string, Record<string, number>>();
-
   for (const stack of allStacks) {
     const bfc = beforeMap.get(stack);
     const afc = afterMap.get(stack);
@@ -82,10 +158,11 @@ export function diffBaselines(
     const delta: Record<string, number> = {};
     const deltaPct: Record<string, number> = {};
 
-    for (let i = 0; i < dims.length; i++) {
-      const dim = dims[i];
-      const bv = bfc ? (bfc.self_cost[i] ?? 0) * (normalize ? normFactors[dim] : 1) : 0;
-      const av = afc ? (afc.self_cost[i] ?? 0) : 0;
+    for (const dim of dims) {
+      const bi = beforeDimIdx.get(dim);
+      const ai = afterDimIdx.get(dim);
+      const bv = bfc && bi !== undefined ? (bfc.self_cost[bi] ?? 0) * (normalize ? normFactors[dim] : 1) : 0;
+      const av = afc && ai !== undefined ? (afc.self_cost[ai] ?? 0) : 0;
 
       beforeCosts[dim] = bv;
       afterCosts[dim] = av;
@@ -102,9 +179,6 @@ export function diffBaselines(
     }
 
     const entry: DiffEntry = { stack, name: leafName, before: beforeCosts, after: afterCosts, delta, delta_pct: deltaPct };
-
-    // Store for cost shift detection
-    parentSelfDelta.set(stack, delta);
 
     if (!bfc) {
       newStacks.push(entry);
@@ -128,9 +202,10 @@ export function diffBaselines(
     const parentBfc = beforeMap.get(parentStack);
     const parentAfc = afterMap.get(parentStack);
     if (parentBfc && parentAfc) {
-      const pidx = primaryIdx >= 0 ? primaryIdx : 0;
-      const parentBefore = (parentBfc.total_cost[pidx] ?? 0) * (normalize ? (normFactors[primaryDim] ?? 1) : 1);
-      const parentAfter = parentAfc.total_cost[pidx] ?? 0;
+      const bpi = beforeDimIdx.get(primaryDim);
+      const api = afterDimIdx.get(primaryDim);
+      const parentBefore = bpi !== undefined ? (parentBfc.total_cost[bpi] ?? 0) * (normalize ? (normFactors[primaryDim] ?? 1) : 1) : 0;
+      const parentAfter = api !== undefined ? (parentAfc.total_cost[api] ?? 0) : 0;
       const parentDeltaPct = parentAfter !== 0 ? Math.abs((parentAfter - parentBefore) / parentAfter) * 100 : 0;
       if (parentDeltaPct < 2) {
         entry.likely_refactoring = true;
@@ -157,10 +232,11 @@ export function diffBaselines(
     .sort((a, b) => (b.before[primaryDim] ?? 0) - (a.before[primaryDim] ?? 0))
     .slice(0, topN);
 
-  // Phase 6: Headline comparison
+  // Phase 6: Headline comparison — always use raw totals (not normalized)
+  // so users see actual cost changes, not distribution-adjusted values
   const headline: DiffResult['headline'] = {};
   for (const dim of dims) {
-    const bv = (beforeTotals[dim] ?? 0) * (normalize ? normFactors[dim] : 1);
+    const bv = beforeTotals[dim] ?? 0;
     const av = afterTotals[dim] ?? 0;
     headline[dim] = {
       before: bv,

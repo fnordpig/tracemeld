@@ -1,11 +1,16 @@
 // src/importers/import.ts
 import type { ImportFormat, ImportedProfile } from './types.js';
 import { detectFormat } from './detect.js';
-import { importCollapsed } from './collapsed.js';
+import { importCollapsed, type CollapsedOptions } from './collapsed.js';
 import { importChromeTrace } from './chrome-trace.js';
 import { importGecko } from './gecko.js';
 import { importPprof } from './pprof.js';
 import { ProfileBuilder } from '../model/profile.js';
+
+export interface ImportOptions {
+  /** Options passed to the collapsed importer when format is 'collapsed'. */
+  collapsed?: CollapsedOptions;
+}
 
 export interface ImportProfileResult {
   format_detected: string;
@@ -22,6 +27,7 @@ export function importProfile(
   formatHint: ImportFormat | 'auto' = 'auto',
   mergeInto?: ProfileBuilder,
   symsJson?: string,
+  options?: ImportOptions,
 ): ImportProfileResult {
   const format = formatHint === 'auto' ? detectFormat(content) : formatHint;
 
@@ -29,7 +35,7 @@ export function importProfile(
     throw new Error(`Unable to detect format for '${name}'. Format is unknown.`);
   }
 
-  const imported = runImporter(content, name, format, symsJson);
+  const imported = runImporter(content, name, format, symsJson, options);
   const result = buildImportResult(imported);
 
   if (mergeInto) {
@@ -39,10 +45,10 @@ export function importProfile(
   return result;
 }
 
-function runImporter(content: string, name: string, format: ImportFormat, symsJson?: string): ImportedProfile {
+function runImporter(content: string, name: string, format: ImportFormat, symsJson?: string, options?: ImportOptions): ImportedProfile {
   switch (format) {
     case 'collapsed':
-      return importCollapsed(content, name);
+      return importCollapsed(content, name, options?.collapsed);
     case 'chrome_trace':
       return importChromeTrace(content, name);
     case 'gecko':

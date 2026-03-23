@@ -140,8 +140,9 @@ describe('importChromeTrace', () => {
     const spans = result.profile.lanes[0].spans;
     expect(spans).toHaveLength(2);
 
-    const outer = spans.find((s) => result.profile.frames[s.frame_index].name === 'outer')!;
-    const inner = spans.find((s) => result.profile.frames[s.frame_index].name === 'inner')!;
+    const outer = spans.find((s) => result.profile.frames[s.frame_index].name === 'outer');
+    const inner = spans.find((s) => result.profile.frames[s.frame_index].name === 'inner');
+    if (!outer || !inner) throw new Error('expected outer and inner spans');
 
     expect(outer.parent_id).toBeNull();
     expect(inner.parent_id).toBe(outer.id);
@@ -160,8 +161,9 @@ describe('importChromeTrace', () => {
     const spans = result.profile.lanes[0].spans;
     expect(spans).toHaveLength(2);
 
-    const outer = spans.find((s) => result.profile.frames[s.frame_index].name === 'outer')!;
-    const innerX = spans.find((s) => result.profile.frames[s.frame_index].name === 'inner_x')!;
+    const outer = spans.find((s) => result.profile.frames[s.frame_index].name === 'outer');
+    const innerX = spans.find((s) => result.profile.frames[s.frame_index].name === 'inner_x');
+    if (!outer || !innerX) throw new Error('expected outer and innerX spans');
 
     // The X event should be nested under the B/E outer span via post-processing
     // Both start as parent_id null from initial creation, but outer is root and inner_x is contained

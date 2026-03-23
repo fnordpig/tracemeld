@@ -100,8 +100,8 @@ export function exportSpeedscope(profile: Profile, options?: SpeedscopeExportOpt
         for (const span of lane.spans) {
           // Idle filtering: skip spans whose frame name starts with "user_input:"
           if (!includeIdle) {
-            const frame = profile.frames[span.frame_index];
-            if (frame && frame.name.startsWith('user_input:')) {
+            const frame = profile.frames[span.frame_index] as typeof profile.frames[number] | undefined;
+            if (frame?.name.startsWith('user_input:')) {
               continue;
             }
           }

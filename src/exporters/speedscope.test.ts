@@ -382,7 +382,7 @@ describe('exportSpeedscope', () => {
       });
 
       const json = exportSpeedscope(builder.profile);
-      expect(() => JSON.parse(json)).not.toThrow();
+      expect(() => { JSON.parse(json); }).not.toThrow();
     });
   });
 });

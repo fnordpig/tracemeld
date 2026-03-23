@@ -2,7 +2,6 @@
 import type { Frame, Profile } from '../model/types.js';
 import type {
   BaselineDigest,
-  BaselineTags,
   KindBreakdown,
   FrameCost,
   DimensionHotspots,
@@ -91,10 +90,11 @@ export function exportBaseline(
     });
   }
   // Sort by first dimension descending
+  const firstDimKey = profile.value_types[0]?.key;
   kind_breakdown.sort((a, b) => {
-    const aMax = Math.max(...Object.values(a.totals));
-    const bMax = Math.max(...Object.values(b.totals));
-    return bMax - aMax;
+    const av = firstDimKey ? (a.totals[firstDimKey] ?? 0) : 0;
+    const bv = firstDimKey ? (b.totals[firstDimKey] ?? 0) : 0;
+    return bv - av;
   });
 
   // 3. Frame costs — aggregate by stack path (collapsed-stack style)

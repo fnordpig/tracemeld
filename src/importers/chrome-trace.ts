@@ -30,6 +30,7 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
 
   const frameTable = new FrameTable();
   const lanesMap = new Map<string, { lane: Lane; openSpans: Map<string, Span[]>; nestingStack: Span[] }>();
+  const xSpanIds = new Set<string>(); // track spans from X events for containment post-pass
   let spanIdCounter = 0;
 
   // First pass: collect M (metadata) events for lane names
@@ -81,8 +82,10 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
         const frameIdx = frameTable.getOrInsert({ name: event.name ?? '<unknown>' });
         const startMs = (event.ts ?? 0) / 1000;
         const durMs = (event.dur ?? event.tdur ?? 0) / 1000;
+        const xId = `imp_${spanIdCounter++}`;
+        xSpanIds.add(xId);
         lane.spans.push({
-          id: `imp_${spanIdCounter++}`,
+          id: xId,
           frame_index: frameIdx,
           parent_id: null,
           start_time: startMs,
@@ -157,25 +160,27 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
     }
   }
 
-  // Post-process: assign parent_id for unparented spans using containment-based nesting
+  // Post-process: assign parent_id for unparented X spans using containment-based nesting.
+  // All unparented spans (both B/E root and X) are candidates as parents,
+  // but only X spans (which lack B/E nesting info) get re-parented.
   for (const entry of lanesMap.values()) {
     const spans = entry.lane.spans;
-    // Only consider spans not already parented by B/E logic
-    const xSpans = spans.filter((s) => s.parent_id === null);
+    const unparented = spans.filter((s) => s.parent_id === null);
     // Sort by start_time asc, then by duration desc (so parent comes before child at same start)
-    xSpans.sort((a, b) => {
+    unparented.sort((a, b) => {
       const startDiff = a.start_time - b.start_time;
       if (startDiff !== 0) return startDiff;
       return (b.end_time - b.start_time) - (a.end_time - a.start_time);
     });
 
     const nestStack: Span[] = [];
-    for (const span of xSpans) {
+    for (const span of unparented) {
       // Pop spans from stack whose end time <= current span's start time
       while (nestStack.length > 0 && nestStack[nestStack.length - 1].end_time <= span.start_time) {
         nestStack.pop();
       }
-      if (nestStack.length > 0) {
+      if (nestStack.length > 0 && xSpanIds.has(span.id)) {
+        // Only assign parent to X spans — B/E root spans are already correctly rooted
         const parent = nestStack[nestStack.length - 1];
         span.parent_id = parent.id;
         parent.children.push(span.id);

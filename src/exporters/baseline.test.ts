@@ -3,9 +3,7 @@ import { describe, it, expect } from 'vitest';
 import { exportBaseline } from './baseline.js';
 import { ProfileBuilder } from '../model/profile.js';
 import type { ValueType } from '../model/types.js';
-import type { BaselineDigest } from './baseline-types.js';
 import { PatternRegistry } from '../patterns/registry.js';
-import type { PatternMatch } from '../patterns/types.js';
 
 function makeValueTypes(): ValueType[] {
   return [
@@ -104,20 +102,19 @@ describe('exportBaseline', () => {
       const llmKind = digest.kind_breakdown.find((k) => k.kind === 'llm');
       const toolKind = digest.kind_breakdown.find((k) => k.kind === 'tool');
 
-      expect(llmKind).toBeDefined();
-      expect(toolKind).toBeDefined();
+      if (!llmKind || !toolKind) throw new Error('expected both kinds');
 
       // llm kind: 1 span (s1), self cost = [30, 20]
-      expect(llmKind!.span_count).toBe(1);
-      expect(llmKind!.totals['wall_ms']).toBe(30);
-      expect(llmKind!.totals['tokens']).toBe(20);
-      expect(llmKind!.error_count).toBe(0);
+      expect(llmKind.span_count).toBe(1);
+      expect(llmKind.totals['wall_ms']).toBe(30);
+      expect(llmKind.totals['tokens']).toBe(20);
+      expect(llmKind.error_count).toBe(0);
 
       // tool kind: 2 spans (s2, s3), self cost = [70+100, 30+50] = [170, 80]
-      expect(toolKind!.span_count).toBe(2);
-      expect(toolKind!.totals['wall_ms']).toBe(170);
-      expect(toolKind!.totals['tokens']).toBe(80);
-      expect(toolKind!.error_count).toBe(1); // s3 has error
+      expect(toolKind.span_count).toBe(2);
+      expect(toolKind.totals['wall_ms']).toBe(170);
+      expect(toolKind.totals['tokens']).toBe(80);
+      expect(toolKind.error_count).toBe(1); // s3 has error
     });
   });
 
@@ -133,28 +130,28 @@ describe('exportBaseline', () => {
       expect(digest.frame_costs.length).toBe(3);
 
       const rootCost = digest.frame_costs.find((fc) => fc.stack === 'llm:call');
-      expect(rootCost).toBeDefined();
-      expect(rootCost!.call_count).toBe(1);
+      if (!rootCost) throw new Error('expected rootCost');
+      expect(rootCost.call_count).toBe(1);
       // self_cost for root: [200-70-100, 100-30-50] = [30, 20]
-      expect(rootCost!.self_cost[0]).toBe(30);
-      expect(rootCost!.self_cost[1]).toBe(20);
+      expect(rootCost.self_cost[0]).toBe(30);
+      expect(rootCost.self_cost[1]).toBe(20);
       // total_cost for root: [200, 100]
-      expect(rootCost!.total_cost[0]).toBe(200);
-      expect(rootCost!.total_cost[1]).toBe(100);
+      expect(rootCost.total_cost[0]).toBe(200);
+      expect(rootCost.total_cost[1]).toBe(100);
 
       const readCost = digest.frame_costs.find((fc) => fc.stack === 'llm:call;tool:read');
-      expect(readCost).toBeDefined();
-      expect(readCost!.call_count).toBe(1);
-      expect(readCost!.self_cost[0]).toBe(70);
-      expect(readCost!.self_cost[1]).toBe(30);
-      expect(readCost!.total_cost[0]).toBe(70);
-      expect(readCost!.total_cost[1]).toBe(30);
+      if (!readCost) throw new Error('expected readCost');
+      expect(readCost.call_count).toBe(1);
+      expect(readCost.self_cost[0]).toBe(70);
+      expect(readCost.self_cost[1]).toBe(30);
+      expect(readCost.total_cost[0]).toBe(70);
+      expect(readCost.total_cost[1]).toBe(30);
 
       const writeCost = digest.frame_costs.find((fc) => fc.stack === 'llm:call;tool:write');
-      expect(writeCost).toBeDefined();
-      expect(writeCost!.call_count).toBe(1);
-      expect(writeCost!.self_cost[0]).toBe(100);
-      expect(writeCost!.self_cost[1]).toBe(50);
+      if (!writeCost) throw new Error('expected writeCost');
+      expect(writeCost.call_count).toBe(1);
+      expect(writeCost.self_cost[0]).toBe(100);
+      expect(writeCost.self_cost[1]).toBe(50);
     });
 
     it('aggregates multiple spans with same stack path', () => {
@@ -272,7 +269,7 @@ describe('exportBaseline', () => {
     it('collects detected patterns when registry is provided', () => {
       const profile = buildBasicProfile();
       const registry = new PatternRegistry();
-      registry.register((_p) => [
+      registry.register(() => [
         {
           pattern: {
             name: 'test-pattern',

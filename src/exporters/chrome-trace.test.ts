@@ -124,10 +124,9 @@ describe('exportChromeTrace', () => {
       const processName = mEvents.find((e) => e.name === 'process_name');
       const threadName = mEvents.find((e) => e.name === 'thread_name');
 
-      expect(processName).toBeDefined();
-      expect(processName!.args).toEqual({ name: 'main' });
-      expect(threadName).toBeDefined();
-      expect(threadName!.args).toEqual({ name: 'main' });
+      if (!processName || !threadName) throw new Error('expected M events');
+      expect(processName.args).toEqual({ name: 'main' });
+      expect(threadName.args).toEqual({ name: 'main' });
     });
   });
 
@@ -336,7 +335,7 @@ describe('exportChromeTrace', () => {
 
       const result = exportChromeTrace(builder.profile);
       const xEvents = getEvents(result).filter((e) => e.ph === 'X');
-      const args = xEvents[0].args!;
+      const args = xEvents[0].args ?? {};
 
       // Original args are preserved
       expect(args['model']).toBe('gpt-4');

@@ -179,8 +179,8 @@ describe('diffBaselines', () => {
     });
     const result = diffBaselines(before, after, { normalize: false, min_delta_pct: 0 });
     const childB = result.regressions.find((e) => e.name === 'child_b');
-    expect(childB).toBeDefined();
-    expect(childB!.likely_refactoring).toBe(true);
+    if (!childB) throw new Error('expected child_b regression');
+    expect(childB.likely_refactoring).toBe(true);
   });
 
   it('computes headline deltas per dimension', () => {
@@ -248,6 +248,160 @@ describe('diffBaselines', () => {
     expect(result.headline.wall_ms.delta).toBe(-200);
     expect(result.headline.tokens.delta).toBe(1000);
     expect(result.regression_warnings.some((w) => w.dimension === 'tokens')).toBe(true);
+  });
+
+  it('auto-maps dimensions when each side has one non-zero dimension', () => {
+    const before = makeDigest({
+      value_types: [{ key: 'wall_ms', description: 'Wall time', unit: 'milliseconds' }],
+      totals: { wall_ms: 1000 },
+      frame_costs: [
+        { stack: 'root;hot', self_cost: [800], total_cost: [800], call_count: 1 },
+        { stack: 'root;cold', self_cost: [200], total_cost: [200], call_count: 1 },
+      ],
+    });
+    const after = makeDigest({
+      value_types: [{ key: 'weight', description: 'Sample weight', unit: 'none' }],
+      totals: { weight: 500 },
+      frame_costs: [
+        { stack: 'root;hot', self_cost: [300], total_cost: [300], call_count: 1 },
+        { stack: 'root;cold', self_cost: [200], total_cost: [200], call_count: 1 },
+      ],
+    });
+    // Auto-map: wall_ms → weight (before's dim remapped to after's)
+    const result = diffBaselines(before, after, { normalize: false, min_delta_pct: 0 });
+    // Headline should show the unified dimension 'weight' with real deltas
+    expect(result.headline.weight).toBeDefined();
+    expect(result.headline.weight.before).toBe(1000);
+    expect(result.headline.weight.after).toBe(500);
+    expect(result.headline.weight.delta).toBe(-500);
+    // 'hot' should show as improved: 800 → 300
+    expect(result.improvements.length).toBeGreaterThan(0);
+    const hot = result.improvements.find((e) => e.name === 'hot');
+    expect(hot).toBeDefined();
+    expect(hot!.delta.weight).toBe(-500);
+  });
+
+  it('uses explicit dimension_map', () => {
+    const before = makeDigest({
+      value_types: [{ key: 'cpu_ms', description: 'CPU time', unit: 'milliseconds' }],
+      totals: { cpu_ms: 1000 },
+      frame_costs: [
+        { stack: 'root;a', self_cost: [1000], total_cost: [1000], call_count: 1 },
+      ],
+    });
+    const after = makeDigest({
+      value_types: [{ key: 'samples', description: 'Sample count', unit: 'none' }],
+      totals: { samples: 2000 },
+      frame_costs: [
+        { stack: 'root;a', self_cost: [2000], total_cost: [2000], call_count: 1 },
+      ],
+    });
+    const result = diffBaselines(before, after, {
+      normalize: false,
+      min_delta_pct: 0,
+      dimension_map: { cpu_ms: 'samples' },
+    });
+    expect(result.headline.samples.before).toBe(1000);
+    expect(result.headline.samples.after).toBe(2000);
+    expect(result.regressions.length).toBe(1);
+    expect(result.regressions[0].delta.samples).toBe(1000);
+  });
+
+  it('does not auto-map when both sides share a dimension', () => {
+    const before = makeDigest({
+      value_types: [
+        { key: 'wall_ms', description: 'Wall time', unit: 'milliseconds' },
+        { key: 'weight', description: 'Weight', unit: 'none' },
+      ],
+      totals: { wall_ms: 1000, weight: 500 },
+      frame_costs: [
+        { stack: 'root;a', self_cost: [600, 300], total_cost: [600, 300], call_count: 1 },
+      ],
+    });
+    const after = makeDigest({
+      value_types: [
+        { key: 'wall_ms', description: 'Wall time', unit: 'milliseconds' },
+        { key: 'weight', description: 'Weight', unit: 'none' },
+      ],
+      totals: { wall_ms: 800, weight: 600 },
+      frame_costs: [
+        { stack: 'root;a', self_cost: [500, 400], total_cost: [500, 400], call_count: 1 },
+      ],
+    });
+    // No auto-map needed — dimensions already match
+    const result = diffBaselines(before, after, { normalize: false, min_delta_pct: 0 });
+    expect(result.headline.wall_ms.before).toBe(1000);
+    expect(result.headline.wall_ms.after).toBe(800);
+    expect(result.headline.weight.before).toBe(500);
+    expect(result.headline.weight.after).toBe(600);
+  });
+
+  it('diffs profiles with different value types (no auto-map)', () => {
+    const before = makeDigest({
+      value_types: [{ key: 'wall_ms', description: 'Wall time', unit: 'milliseconds' }],
+      totals: { wall_ms: 1000 },
+      frame_costs: [
+        { stack: 'root;hot', self_cost: [800], total_cost: [800], call_count: 1 },
+        { stack: 'root;cold', self_cost: [200], total_cost: [200], call_count: 1 },
+      ],
+    });
+    const after = makeDigest({
+      value_types: [{ key: 'weight', description: 'Sample weight', unit: 'none' }],
+      totals: { weight: 500 },
+      frame_costs: [
+        { stack: 'root;hot', self_cost: [400], total_cost: [400], call_count: 1 },
+        { stack: 'root;cold', self_cost: [100], total_cost: [100], call_count: 1 },
+      ],
+    });
+    // Disable auto-map to test raw cross-dimension behavior
+    const resultWall = diffBaselines(before, after, { normalize: false, dimension: 'wall_ms', min_delta_pct: 0, dimension_map: {} });
+    expect(resultWall.headline.wall_ms.before).toBe(1000);
+    expect(resultWall.headline.wall_ms.after).toBe(0);
+    expect(resultWall.improvements.length).toBe(2);
+
+    const resultWeight = diffBaselines(before, after, { normalize: false, dimension: 'weight', min_delta_pct: 0, dimension_map: {} });
+    expect(resultWeight.headline.weight.before).toBe(0);
+    expect(resultWeight.headline.weight.after).toBe(500);
+    expect(resultWeight.regressions.length).toBe(2);
+
+    // Both dimensions present in headline
+    expect(resultWeight.headline.wall_ms).toBeDefined();
+    expect(resultWall.headline.weight).toBeDefined();
+  });
+
+  it('diffs profiles with overlapping and unique value types', () => {
+    const before = makeDigest({
+      value_types: [
+        { key: 'wall_ms', description: 'Wall time', unit: 'milliseconds' },
+        { key: 'cpu_ms', description: 'CPU time', unit: 'milliseconds' },
+      ],
+      totals: { wall_ms: 1000, cpu_ms: 800 },
+      frame_costs: [
+        { stack: 'root;a', self_cost: [600, 500], total_cost: [600, 500], call_count: 1 },
+      ],
+    });
+    const after = makeDigest({
+      value_types: [
+        { key: 'wall_ms', description: 'Wall time', unit: 'milliseconds' },
+        { key: 'tokens', description: 'Tokens', unit: 'none' },
+      ],
+      totals: { wall_ms: 900, tokens: 3000 },
+      frame_costs: [
+        { stack: 'root;a', self_cost: [400, 2000], total_cost: [400, 2000], call_count: 1 },
+      ],
+    });
+    // No auto-map: each side has 2 dims, not eligible
+    const result = diffBaselines(before, after, { normalize: false, dimension: 'wall_ms', min_delta_pct: 0 });
+    // wall_ms is shared — should diff correctly
+    expect(result.headline.wall_ms.before).toBe(1000);
+    expect(result.headline.wall_ms.after).toBe(900);
+    expect(result.headline.wall_ms.delta).toBe(-100);
+    // cpu_ms only in before, tokens only in after
+    expect(result.headline.cpu_ms.after).toBe(0);
+    expect(result.headline.tokens.before).toBe(0);
+    // The shared stack should show improvement on wall_ms
+    expect(result.improvements.length).toBe(1);
+    expect(result.improvements[0].delta.wall_ms).toBe(-200);
   });
 
   it('respects top_n limit', () => {

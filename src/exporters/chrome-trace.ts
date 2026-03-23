@@ -69,7 +69,7 @@ export function exportChromeTrace(
 
     // Emit X (complete) events for spans
     for (const span of lane.spans) {
-      const frame = profile.frames[span.frame_index];
+      const frame = profile.frames[span.frame_index] as typeof profile.frames[number] | undefined;
       if (!frame) continue;
 
       // Idle filtering: skip spans whose frame name starts with "user_input:"
