@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { importClaudeTranscript } from './claude-transcript.js';
+import { detectFormat } from './detect.js';
 
 function makeTranscript(lines: Record<string, unknown>[]): string {
   return lines.map((l) => JSON.stringify(l)).join('\n');
@@ -356,5 +357,45 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('user_input:');
     });
     expect(idleSpans.length).toBe(0);
+  });
+});
+
+describe('detectFormat – claude_transcript', () => {
+  it('detects JSONL with sessionId and type as claude_transcript', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 'sess1',
+        message: { role: 'user', content: 'hello' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 'sess1',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
+      },
+    ]);
+    expect(detectFormat(content)).toBe('claude_transcript');
+  });
+
+  it('does not detect regular JSONL without sessionId', () => {
+    const content = [
+      JSON.stringify({ type: 'event', data: 'something' }),
+      JSON.stringify({ type: 'event', data: 'other' }),
+    ].join('\n');
+    expect(detectFormat(content)).not.toBe('claude_transcript');
+  });
+
+  it('does not detect a Chrome trace JSON object as claude_transcript', () => {
+    const content = JSON.stringify({
+      traceEvents: [{ ph: 'B', name: 'foo', ts: 0, pid: 1, tid: 1 }],
+    });
+    expect(detectFormat(content)).toBe('chrome_trace');
   });
 });

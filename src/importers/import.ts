@@ -5,11 +5,14 @@ import { importCollapsed, type CollapsedOptions } from './collapsed.js';
 import { importChromeTrace } from './chrome-trace.js';
 import { importGecko } from './gecko.js';
 import { importPprof } from './pprof.js';
+import { importClaudeTranscript, type ClaudeTranscriptOptions } from './claude-transcript.js';
 import { ProfileBuilder } from '../model/profile.js';
 
 export interface ImportOptions {
   /** Options passed to the collapsed importer when format is 'collapsed'. */
   collapsed?: CollapsedOptions;
+  /** Options passed to the Claude transcript importer when format is 'claude_transcript'. */
+  claude_transcript?: ClaudeTranscriptOptions;
 }
 
 export interface ImportProfileResult {
@@ -49,6 +52,8 @@ function runImporter(content: string, name: string, format: ImportFormat, symsJs
   switch (format) {
     case 'collapsed':
       return importCollapsed(content, name, options?.collapsed);
+    case 'claude_transcript':
+      return importClaudeTranscript(content, name, options?.claude_transcript);
     case 'chrome_trace':
       return importChromeTrace(content, name);
     case 'gecko':

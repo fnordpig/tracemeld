@@ -250,7 +250,7 @@ export function createServer(): McpServer {
       },
       inputSchema: {
         source: z.string().describe('File path or inline profile data string'),
-        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite']).optional(),
+        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'claude_transcript', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite']).optional(),
         lane_name: z.string().optional(),
         value_type: z.string().optional().describe(
           'Override value type key for collapsed format imports, e.g. "wall_ms". ' +

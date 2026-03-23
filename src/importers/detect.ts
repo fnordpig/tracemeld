@@ -5,6 +5,26 @@ export function detectFormat(content: string): ImportFormat {
   const trimmed = content.trim();
   if (trimmed.length === 0) return 'unknown';
 
+  // Try Claude transcript (JSONL) before full JSON parse
+  if (trimmed.startsWith('{') && !trimmed.startsWith('[')) {
+    const firstLine = trimmed.slice(0, trimmed.indexOf('\n') === -1 ? undefined : trimmed.indexOf('\n'));
+    try {
+      const first: unknown = JSON.parse(firstLine);
+      if (typeof first === 'object' && first !== null) {
+        const obj = first as Record<string, unknown>;
+        if (
+          typeof obj['sessionId'] === 'string' &&
+          typeof obj['type'] === 'string' &&
+          ['user', 'assistant', 'system'].includes(obj['type'] as string)
+        ) {
+          return 'claude_transcript';
+        }
+      }
+    } catch {
+      // Not valid JSONL first line, fall through
+    }
+  }
+
   // Try JSON formats first
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
     try {
