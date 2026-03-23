@@ -54,6 +54,11 @@ function detectJsonFormat(obj: Record<string, unknown>): ImportFormat {
     return 'chrome_trace';
   }
 
+  // V8 CPUProfile: {nodes: [...], startTime, endTime, samples, timeDeltas}
+  if (Array.isArray(obj['nodes']) && 'startTime' in obj && 'endTime' in obj && Array.isArray(obj['samples'])) {
+    return 'v8_cpuprofile';
+  }
+
   if ('meta' in obj && 'threads' in obj && typeof obj['meta'] === 'object' && obj['meta'] !== null) {
     const meta = obj['meta'] as Record<string, unknown>;
     if (typeof meta['version'] === 'number') {

@@ -241,7 +241,7 @@ export function createServer(): McpServer {
     'import_profile',
     {
       description:
-        "Load profiling data from a file path or inline string. Auto-detects format (collapsed stacks, Chrome trace) or accepts a hint. Use when you want to analyze an existing profile.",
+        "Load profiling data from a file path or inline string. Auto-detects format (collapsed stacks, Chrome trace, V8 .cpuprofile, Gecko, pprof, Claude transcripts) or accepts a hint. Use when you want to analyze an existing profile.",
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -250,7 +250,7 @@ export function createServer(): McpServer {
       },
       inputSchema: {
         source: z.string().describe('File path or inline profile data string'),
-        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'claude_transcript', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite']).optional(),
+        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'claude_transcript', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite', 'v8_cpuprofile']).optional(),
         lane_name: z.string().optional(),
         value_type: z.string().optional().describe(
           'Override value type key for collapsed format imports, e.g. "wall_ms". ' +

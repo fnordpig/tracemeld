@@ -6,6 +6,7 @@ import { importChromeTrace } from './chrome-trace.js';
 import { importGecko } from './gecko.js';
 import { importPprof } from './pprof.js';
 import { importClaudeTranscript, type ClaudeTranscriptOptions } from './claude-transcript.js';
+import { importV8CpuProfile } from './v8-cpuprofile.js';
 import { ProfileBuilder } from '../model/profile.js';
 
 export interface ImportOptions {
@@ -60,6 +61,8 @@ function runImporter(content: string, name: string, format: ImportFormat, symsJs
       return importGecko(content, name, symsJson);
     case 'pprof':
       return importPprof(content, name);
+    case 'v8_cpuprofile':
+      return importV8CpuProfile(content, name);
     case 'nsight_sqlite':
     case 'speedscope':
       throw new Error(`Format '${format}' is not yet implemented`);

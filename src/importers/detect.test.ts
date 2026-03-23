@@ -28,6 +28,17 @@ describe('detectFormat', () => {
     expect(detectFormat(content)).toBe('speedscope');
   });
 
+  it('detects V8 CPUProfile format', () => {
+    const content = JSON.stringify({
+      nodes: [{ id: 1, callFrame: { functionName: '(root)' }, hitCount: 0 }],
+      startTime: 0,
+      endTime: 1000,
+      samples: [1],
+      timeDeltas: [1000],
+    });
+    expect(detectFormat(content)).toBe('v8_cpuprofile');
+  });
+
   it('returns unknown for unrecognized content', () => {
     expect(detectFormat('just some random text')).toBe('unknown');
   });
