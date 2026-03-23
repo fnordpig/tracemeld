@@ -121,7 +121,7 @@ export function importClaudeTranscript(
   const inputCostPerM = options?.input_cost_per_m ?? 15;
   const outputCostPerM = options?.output_cost_per_m ?? 75;
   const cacheReadCostPerM = options?.cache_read_cost_per_m ?? 1.5;
-  const includeIdle = options?.include_idle ?? true;
+  const includeIdle = options?.include_idle ?? false;
 
   // Phase 1: Parse JSONL
   const lines: TranscriptLine[] = [];

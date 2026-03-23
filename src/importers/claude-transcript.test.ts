@@ -290,7 +290,7 @@ describe('importClaudeTranscript', () => {
       },
     ]);
 
-    const result = importClaudeTranscript(content, 'test');
+    const result = importClaudeTranscript(content, 'test', { include_idle: true });
     const mainLane = result.profile.lanes[0];
 
     // Find idle spans
