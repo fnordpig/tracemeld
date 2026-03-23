@@ -259,6 +259,10 @@ export function createServer(): McpServer {
         value_unit: z.enum(['nanoseconds', 'microseconds', 'milliseconds', 'seconds', 'bytes', 'none']).optional().describe(
           'Unit for the value type override. Default: "milliseconds" if value_type is set, else "none".',
         ),
+        include_idle: z.boolean().optional().describe(
+          'Include user_input idle spans in Claude transcript imports. Default: false. ' +
+          'Set to true if you want to see how slow the human is.',
+        ),
         nsight_options: z.object({
           max_kernels: z.number().optional(),
           time_range: z.object({
@@ -318,13 +322,18 @@ export function createServer(): McpServer {
       } else {
         content = args.source;
       }
-      const importOpts = args.value_type ? {
-        collapsed: {
+      const importOpts: import('./importers/import.js').ImportOptions = {};
+      if (args.value_type) {
+        importOpts.collapsed = {
           value_type_key: args.value_type,
           value_type_unit: args.value_unit ?? 'milliseconds' as const,
-        },
-      } : undefined;
-      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder, symsJson, importOpts);
+        };
+      }
+      if (args.include_idle !== undefined) {
+        importOpts.claude_transcript = { include_idle: args.include_idle };
+      }
+      const hasOpts = Object.keys(importOpts).length > 0;
+      const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder, symsJson, hasOpts ? importOpts : undefined);
       state.invalidatePatternCache();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
     },
