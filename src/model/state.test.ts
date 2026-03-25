@@ -49,4 +49,33 @@ describe('ProfilerState', () => {
     state.invalidatePatternCache();
     expect(state.patternCache).toBeNull();
   });
+
+  it('reset clears all state and produces a fresh builder', () => {
+    const state = new ProfilerState();
+
+    // Accumulate some state
+    state.pushSpan('main', 's0');
+    state.nextSpanId(); // s0
+    state.nextSpanId(); // s1
+    state.nextMarkerId(); // m0
+    state.patternCache = [];
+    const oldProfileId = state.builder.profile.id;
+
+    state.reset();
+
+    // Builder is a fresh instance
+    expect(state.builder.profile.id).not.toBe(oldProfileId);
+    expect(state.builder.profile.name).toBe('session');
+    expect(state.builder.getLane('main')).toBeDefined();
+    expect(state.builder.profile.lanes).toHaveLength(1);
+    expect(state.builder.profile.frames).toHaveLength(0);
+
+    // Counters and stacks are reset
+    expect(state.nextSpanId()).toBe('s0');
+    expect(state.nextMarkerId()).toBe('m0');
+    expect(state.currentSpanId('main')).toBeNull();
+    expect(state.spanDepth('main')).toBe(0);
+    expect(state.activeLaneId).toBe('main');
+    expect(state.patternCache).toBeNull();
+  });
 });

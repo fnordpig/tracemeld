@@ -7,7 +7,7 @@ import { detectRedundantRead } from '../patterns/redundant-read.js';
 import { detectBlindEdit } from '../patterns/blind-edit.js';
 
 export class ProfilerState {
-  readonly builder: ProfileBuilder;
+  builder: ProfileBuilder;
   readonly registry: PatternRegistry;
   readonly imported = new Map<string, ProfileBuilder>();
   private spanStacks = new Map<string, string[]>();
@@ -22,6 +22,17 @@ export class ProfilerState {
     this.registry.register(detectRetryLoop);
     this.registry.register(detectRedundantRead);
     this.registry.register(detectBlindEdit);
+  }
+
+  /** Discard all profile data and start fresh. */
+  reset(): void {
+    this.builder = new ProfileBuilder('session');
+    this.imported.clear();
+    this.spanStacks.clear();
+    this.activeLaneId = 'main';
+    this._nextSpanId = 0;
+    this._nextMarkerId = 0;
+    this.invalidatePatternCache();
   }
 
   nextSpanId(): string {

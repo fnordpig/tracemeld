@@ -284,6 +284,7 @@ export function createServer(): McpServer {
           || format === 'nsight_sqlite';
 
         if (isSqlite) {
+          state.reset();
           const imported = await importNsightSqlite(
             new Uint8Array(rawBuffer),
             args.lane_name ?? 'imported',
@@ -333,6 +334,7 @@ export function createServer(): McpServer {
         importOpts.claude_transcript = { include_idle: args.include_idle };
       }
       const hasOpts = Object.keys(importOpts).length > 0;
+      state.reset();
       const result = importProfile(content, args.lane_name ?? 'imported', format, state.builder, symsJson, hasOpts ? importOpts : undefined);
       state.invalidatePatternCache();
       return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
