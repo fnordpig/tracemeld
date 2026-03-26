@@ -39,6 +39,7 @@ Reads these formats, auto-detected from content:
 | **Gecko Profile** | Firefox Profiler, [samply](https://github.com/mstange/samply) |
 | **V8 .cpuprofile** | Node.js `--cpu-prof`, Chrome DevTools CPU profiler |
 | **NVIDIA Nsight Systems** | `.nsys-rep` SQLite exports (CUDA kernel timelines) |
+| **xctrace / Metal System Trace** | Apple Instruments `.trace` bundles (Metal, MPS, MLX on Apple Silicon) |
 | **Claude Code transcripts** | `.jsonl` session transcripts from Claude Code |
 
 Gzip-compressed inputs are handled transparently. Gecko profiles with samply `.syms.json` sidecars are auto-resolved.
