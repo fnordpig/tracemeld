@@ -50,15 +50,17 @@ export function importXctraceRows(
   }
 
   // --- metal-gpu-intervals ---
+  // XML tags: gpu-channel-name (Vertex/Fragment/Compute/Blit),
+  // formatted-label (event label), process, start-time, duration
   const gpuRows = schemaRows.get('metal-gpu-intervals');
   if (gpuRows) {
     for (const row of gpuRows) {
       const startNs = Number(row['start-time'] ?? '0');
       const durationNs = Number(row['duration'] ?? '0');
-      const eventType = row['event-type'] ?? 'unknown';
-      const label = row['label'] ?? eventType;
+      const channelName = row['gpu-channel-name'] ?? 'unknown';
+      const label = row['formatted-label'] ?? channelName;
 
-      const laneId = gpuLaneId(eventType);
+      const laneId = gpuLaneId(channelName);
       const lane = getOrCreateLane(lanesMap, laneId);
 
       const frameName = `${laneId}:${label}`;
@@ -75,7 +77,7 @@ export function importXctraceRows(
         end_time: startMs + wallMs,
         values: [wallMs],
         args: {
-          event_type: eventType,
+          channel: channelName,
           ...(row['process'] ? { process: row['process'] } : {}),
           start_ns: startNs,
           duration_ns: durationNs,
@@ -87,17 +89,21 @@ export function importXctraceRows(
     }
   }
 
-  // --- metal-driver-event-intervals ---
-  const driverRows = schemaRows.get('metal-driver-event-intervals');
-  if (driverRows) {
-    const lane = getOrCreateLane(lanesMap, 'driver', 'custom');
-    for (const row of driverRows) {
+  // --- mps-hw-intervals ---
+  // Same structure as metal-gpu-intervals but for MPS operations.
+  // Uses mps-event-name for channel, formatted-label for detail.
+  const mpsRows = schemaRows.get('mps-hw-intervals');
+  if (mpsRows) {
+    for (const row of mpsRows) {
       const startNs = Number(row['start-time'] ?? '0');
       const durationNs = Number(row['duration'] ?? '0');
-      const eventType = row['event-type'] ?? 'unknown';
-      const label = row['label'] ?? eventType;
+      const channelName = row['mps-event-name'] || row['gpu-channel-name'] || 'Compute';
+      const label = row['formatted-label'] ?? channelName;
 
-      const frameName = `driver:${label}`;
+      const laneId = gpuLaneId(channelName);
+      const lane = getOrCreateLane(lanesMap, laneId);
+
+      const frameName = `${laneId}:${label}`;
       const frameIdx = frameTable.getOrInsert({ name: frameName });
 
       const wallMs = nsToMs(durationNs);
@@ -111,7 +117,47 @@ export function importXctraceRows(
         end_time: startMs + wallMs,
         values: [wallMs],
         args: {
-          event_type: eventType,
+          channel: channelName,
+          schema: 'mps-hw-intervals',
+          ...(row['process'] ? { process: row['process'] } : {}),
+          start_ns: startNs,
+          duration_ns: durationNs,
+        },
+        children: [],
+      };
+
+      lane.spans.push(span);
+    }
+  }
+
+  // --- metal-driver-event-intervals ---
+  // XML tags: gpu-driver-name (event type), gpu-driver-name:1 (sub-type),
+  // formatted-label (detail), process, start-time, duration
+  const driverRows = schemaRows.get('metal-driver-event-intervals');
+  if (driverRows) {
+    const lane = getOrCreateLane(lanesMap, 'driver', 'custom');
+    for (const row of driverRows) {
+      const startNs = Number(row['start-time'] ?? '0');
+      const durationNs = Number(row['duration'] ?? '0');
+      const driverEvent = row['gpu-driver-name'] ?? 'unknown';
+      const label = row['formatted-label'] ?? driverEvent;
+
+      const frameName = `driver:${driverEvent}`;
+      const frameIdx = frameTable.getOrInsert({ name: frameName });
+
+      const wallMs = nsToMs(durationNs);
+      const startMs = nsToMs(startNs);
+
+      const span: Span = {
+        id: nextSpanId(),
+        frame_index: frameIdx,
+        parent_id: null,
+        start_time: startMs,
+        end_time: startMs + wallMs,
+        values: [wallMs],
+        args: {
+          driver_event: driverEvent,
+          label,
           ...(row['process'] ? { process: row['process'] } : {}),
           start_ns: startNs,
           duration_ns: durationNs,

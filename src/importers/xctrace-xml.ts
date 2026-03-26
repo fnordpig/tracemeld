@@ -49,9 +49,21 @@ export function parseXctraceXml(xml: string): XctraceRow[] {
 
       for (const [tag, value] of Object.entries(rowObj)) {
         if (tag.startsWith('@_')) continue;
-        const resolved = resolveElement(value, refMap);
-        if (resolved !== undefined) {
-          row[tag] = resolved;
+
+        // fast-xml-parser collapses duplicate tags into arrays
+        if (Array.isArray(value)) {
+          for (let i = 0; i < value.length; i++) {
+            const resolved = resolveElement(value[i] as unknown, refMap);
+            if (resolved !== undefined) {
+              // First occurrence gets the bare tag, subsequent get tag:N
+              row[i === 0 ? tag : `${tag}:${i}`] = resolved;
+            }
+          }
+        } else {
+          const resolved = resolveElement(value, refMap);
+          if (resolved !== undefined) {
+            row[tag] = resolved;
+          }
         }
       }
       rows.push(row);

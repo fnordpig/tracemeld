@@ -58,6 +58,36 @@ describe('findStarvations', () => {
     }
   });
 
+  it('compresses idle ranges with RLE', () => {
+    // Create many small spans with gaps between them on thread 1,
+    // and one long span on thread 2, so thread 2 has many micro-idle-gaps
+    const events = [
+      { ph: 'M', name: 'thread_name', pid: 1, tid: 1, args: { name: 'Busy' } },
+      { ph: 'M', name: 'thread_name', pid: 1, tid: 2, args: { name: 'Idle-ish' } },
+      // Busy lane: 100ms total
+      { ph: 'X', name: 'work', ts: 0, dur: 100000000, pid: 1, tid: 1, args: {} },
+      // Idle-ish lane: just a tiny span at the start
+      { ph: 'X', name: 'blip', ts: 0, dur: 1000000, pid: 1, tid: 2, args: {} },
+    ];
+    const content = JSON.stringify({ traceEvents: events });
+    const imported = importChromeTrace(content, 'test.json');
+    const result = findStarvations(imported.profile, { min_idle_pct: 50 });
+
+    const starved = result.entries.find((e) => e.lane_name === 'Idle-ish');
+    expect(starved).toBeDefined();
+    if (starved) {
+      // Should be compressed: a single idle range, not hundreds of micro-gaps
+      // With one busy span and one blip, there's exactly one idle gap
+      expect(starved.idle_ranges.length).toBeLessThanOrEqual(3);
+      // Each compressed range has count, min/max/total duration
+      for (const range of starved.idle_ranges) {
+        expect(range.count).toBeGreaterThanOrEqual(1);
+        expect(range.total_duration_ms).toBeGreaterThanOrEqual(0);
+        expect(range.min_duration_ms).toBeLessThanOrEqual(range.max_duration_ms);
+      }
+    }
+  });
+
   it('respects min_idle_pct threshold', () => {
     const events = [
       { ph: 'X', name: 'work', ts: 0, dur: 10000000, pid: 1, tid: 1, args: {} },

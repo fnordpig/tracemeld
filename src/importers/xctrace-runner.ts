@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser';
 export const KNOWN_SCHEMAS = [
   'metal-gpu-intervals',
   'metal-driver-event-intervals',
+  'mps-hw-intervals',
   'os-signpost-interval',
 ] as const;
 

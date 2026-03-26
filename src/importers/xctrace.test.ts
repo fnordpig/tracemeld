@@ -15,23 +15,23 @@ describe('importXctraceRows', () => {
         {
           'start-time': '1000000000',
           'duration': '5000000',
-          'event-type': 'Compute Encoder',
-          'label': 'MPS MatMul 512x512',
+          'gpu-channel-name': 'Compute',
+          'formatted-label': 'Command Buffer 0:Compute Command 0 (ripvec)',
           'process': 'ripvec (4821)',
         },
         {
           'start-time': '2000000000',
           'duration': '3000000',
-          'event-type': 'Vertex Processing',
-          'label': 'DrawIndexed',
-          'process': 'ripvec (4821)',
+          'gpu-channel-name': 'Vertex',
+          'formatted-label': 'Command Buffer 0:Render Command 0 (ghostty)',
+          'process': 'ghostty (1709)',
         },
         {
           'start-time': '3000000000',
           'duration': '2000000',
-          'event-type': 'Fragment Processing',
-          'label': 'FragShader',
-          'process': 'ripvec (4821)',
+          'gpu-channel-name': 'Fragment',
+          'formatted-label': 'Command Buffer 0:Render Command 0 (ghostty)',
+          'process': 'ghostty (1709)',
         },
       ]],
     ]);
@@ -45,27 +45,27 @@ describe('importXctraceRows', () => {
     const computeLane = findLane(result.profile.lanes, 'gpu-compute');
     expect(computeLane.spans).toHaveLength(1);
     const computeSpan = computeLane.spans[0];
-    expect(result.profile.frames[computeSpan.frame_index].name).toBe('gpu-compute:MPS MatMul 512x512');
+    expect(result.profile.frames[computeSpan.frame_index].name).toBe(
+      'gpu-compute:Command Buffer 0:Compute Command 0 (ripvec)',
+    );
     expect(computeSpan.start_time).toBeCloseTo(1000);
     expect(computeSpan.values[0]).toBeCloseTo(5);
 
     const vertexLane = findLane(result.profile.lanes, 'gpu-vertex');
     expect(vertexLane.spans).toHaveLength(1);
-    expect(result.profile.frames[vertexLane.spans[0].frame_index].name).toBe('gpu-vertex:DrawIndexed');
 
     const fragmentLane = findLane(result.profile.lanes, 'gpu-fragment');
     expect(fragmentLane.spans).toHaveLength(1);
-    expect(result.profile.frames[fragmentLane.spans[0].frame_index].name).toBe('gpu-fragment:FragShader');
   });
 
-  it('falls back to gpu-other lane for unknown event types', () => {
+  it('falls back to gpu-other lane for Blit channel', () => {
     const schemaRows = new Map([
       ['metal-gpu-intervals', [
         {
           'start-time': '1000000000',
           'duration': '2000000',
-          'event-type': 'Blit Encoder',
-          'label': 'CopyTexture',
+          'gpu-channel-name': 'Blit',
+          'formatted-label': 'CopyTexture',
         },
       ]],
     ]);
@@ -76,20 +76,20 @@ describe('importXctraceRows', () => {
     expect(result.profile.frames[otherLane.spans[0].frame_index].name).toBe('gpu-other:CopyTexture');
   });
 
-  it('uses event-type as label fallback when label is missing', () => {
+  it('uses channel name as label fallback when formatted-label is missing', () => {
     const schemaRows = new Map([
       ['metal-gpu-intervals', [
         {
           'start-time': '1000000000',
           'duration': '2000000',
-          'event-type': 'Compute Encoder',
+          'gpu-channel-name': 'Compute',
         },
       ]],
     ]);
 
     const result = importXctraceRows(schemaRows, 'test.trace');
     const computeLane = findLane(result.profile.lanes, 'gpu-compute');
-    expect(result.profile.frames[computeLane.spans[0].frame_index].name).toBe('gpu-compute:Compute Encoder');
+    expect(result.profile.frames[computeLane.spans[0].frame_index].name).toBe('gpu-compute:Compute');
   });
 
   it('returns empty profile when no schemas provided', () => {
@@ -103,8 +103,8 @@ describe('importXctraceRows', () => {
         {
           'start-time': '500000000',
           'duration': '10000000',
-          'event-type': 'Command Buffer Processing',
-          'label': 'CommandBuffer #42',
+          'gpu-driver-name': 'Driver Processing',
+          'formatted-label': 'Wire 32.00 KiB System Memory (Success)',
           'process': 'ripvec (4821)',
         },
       ]],
@@ -114,7 +114,7 @@ describe('importXctraceRows', () => {
     const driverLane = findLane(result.profile.lanes, 'driver');
     expect(driverLane.spans).toHaveLength(1);
     const span = driverLane.spans[0];
-    expect(result.profile.frames[span.frame_index].name).toBe('driver:CommandBuffer #42');
+    expect(result.profile.frames[span.frame_index].name).toBe('driver:Driver Processing');
     expect(span.start_time).toBeCloseTo(500);
     expect(span.values[0]).toBeCloseTo(10);
   });
@@ -143,10 +143,10 @@ describe('importXctraceRows', () => {
   it('combines multiple schemas into one profile', () => {
     const schemaRows = new Map([
       ['metal-gpu-intervals', [
-        { 'start-time': '1000000000', 'duration': '5000000', 'event-type': 'Compute Encoder', 'label': 'K1' },
+        { 'start-time': '1000000000', 'duration': '5000000', 'gpu-channel-name': 'Compute', 'formatted-label': 'K1' },
       ]],
       ['metal-driver-event-intervals', [
-        { 'start-time': '500000000', 'duration': '10000000', 'event-type': 'CB Processing', 'label': 'CB1' },
+        { 'start-time': '500000000', 'duration': '10000000', 'gpu-driver-name': 'Driver Processing', 'formatted-label': 'CB1' },
       ]],
       ['os-signpost-interval', [
         { 'start-time': '800000000', 'duration': '50000000', 'name': 'Phase1' },

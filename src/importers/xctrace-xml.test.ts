@@ -50,6 +50,26 @@ describe('parseXctraceXml', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('handles duplicate element tags with indexed keys', () => {
+    const xml = `<trace-query-result>
+      <node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'>
+        <row>
+          <start-time id="10" fmt="00:00.500">500000000</start-time>
+          <duration id="11" fmt="42 µs">42000</duration>
+          <gpu-driver-name id="12" fmt="Driver Processing">Driver Processing</gpu-driver-name>
+          <gpu-driver-name id="13" fmt="Wire Memory">Wire Memory</gpu-driver-name>
+          <formatted-label id="14" fmt="Wire 32 KiB (Success)">Wire 32 KiB</formatted-label>
+        </row>
+      </node>
+    </trace-query-result>`;
+
+    const rows = parseXctraceXml(xml);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]['gpu-driver-name']).toBe('Driver Processing');
+    expect(rows[0]['gpu-driver-name:1']).toBe('Wire Memory');
+    expect(rows[0]['formatted-label']).toBe('Wire 32 KiB');
+  });
+
   it('handles nested elements by extracting fmt attribute', () => {
     const xml = `<trace-query-result>
       <node xpath='//trace-toc[1]/run[1]/data[1]/table[1]'>
