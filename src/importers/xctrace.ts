@@ -161,7 +161,7 @@ export function importXctraceRows(
   const lanes = [...lanesMap.values()];
 
   return {
-    format: 'xctrace' as ImportedProfile['format'],
+    format: 'xctrace',
     profile: {
       id: crypto.randomUUID(),
       name,

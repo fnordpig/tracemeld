@@ -10,6 +10,7 @@ import { explainSpan } from './analysis/explain.js';
 import { findWaste } from './analysis/waste.js';
 import { importProfile, mergeImportedProfile, buildImportResult } from './importers/import.js';
 import { importNsightSqlite } from './importers/nsight-sqlite.js';
+import { importXctrace } from './importers/xctrace.js';
 import { exportCollapsed } from './exporters/collapsed.js';
 import { exportSpeedscope } from './exporters/speedscope.js';
 import { exportChromeTrace } from './exporters/chrome-trace.js';
@@ -19,7 +20,7 @@ import { findSpinpaths } from './analysis/spinpaths.js';
 import { findStarvations } from './analysis/starvations.js';
 import { focusFunction } from './analysis/focus-function.js';
 import { diffBaselines } from './analysis/diff.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pako from 'pako';
@@ -250,7 +251,7 @@ export function createServer(): McpServer {
       },
       inputSchema: {
         source: z.string().describe('File path or inline profile data string'),
-        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'claude_transcript', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite', 'v8_cpuprofile']).optional(),
+        format: z.enum(['auto', 'collapsed', 'chrome_trace', 'claude_transcript', 'gecko', 'pprof', 'speedscope', 'nsight_sqlite', 'v8_cpuprofile', 'xctrace']).optional(),
         lane_name: z.string().optional(),
         value_type: z.string().optional().describe(
           'Override value type key for collapsed format imports, e.g. "wall_ms". ' +
@@ -277,6 +278,22 @@ export function createServer(): McpServer {
       let symsJson: string | undefined;
       const format = args.format ?? 'auto';
       if (!args.source.includes('\n') && existsSync(args.source)) {
+        // Detect xctrace .trace bundle (directory) or format hint
+        const isXctrace = format === 'xctrace'
+          || (args.source.endsWith('.trace') && statSync(args.source).isDirectory());
+
+        if (isXctrace) {
+          state.reset();
+          const imported = await importXctrace(
+            args.source,
+            args.lane_name ?? 'imported',
+          );
+          const result = buildImportResult(imported);
+          mergeImportedProfile(state.builder, imported);
+          state.invalidatePatternCache();
+          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+        }
+
         const rawBuffer = readFileSync(args.source);
 
         // Detect Nsight SQLite: check magic bytes or format hint
