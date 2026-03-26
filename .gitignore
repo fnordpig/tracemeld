@@ -1,3 +1,9 @@
 node_modules/
 build/
 *.tsbuildinfo
+
+# AI coding artifacts
+docs/superpowers/
+.claude/
+.mcp.json
+.tracemeld/
