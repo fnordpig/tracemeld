@@ -114,9 +114,9 @@ describe('importClaudeTranscript', () => {
     });
     expect(bashSpan).toBeDefined();
     // tool_use at T+1s, tool_result at T+31s = 30000ms
-    expect(bashSpan!.values[0]).toBe(30000);
+    expect(bashSpan?.values[0]).toBe(30000);
     // Bash frame should include the description
-    const bashFrame = result.profile.frames[bashSpan!.frame_index];
+    const bashFrame = result.profile.frames[bashSpan?.frame_index ?? 0];
     expect(bashFrame.name).toBe('Bash:Run tests');
   });
 
@@ -176,16 +176,16 @@ describe('importClaudeTranscript', () => {
     expect(turnSpan).toBeDefined();
 
     // Check value indices: wall_ms=0, input_tokens=1, output_tokens=2, cache_read_tokens=3, cost_usd=4
-    expect(turnSpan!.values[1]).toBe(1000); // input_tokens
-    expect(turnSpan!.values[2]).toBe(200); // output_tokens
-    expect(turnSpan!.values[3]).toBe(5000); // cache_read_tokens
+    expect(turnSpan?.values[1]).toBe(1000); // input_tokens
+    expect(turnSpan?.values[2]).toBe(200); // output_tokens
+    expect(turnSpan?.values[3]).toBe(5000); // cache_read_tokens
 
     // Cost: (1000*15 + 5000*1.5 + 200*75) / 1_000_000
     const expectedCost = (1000 * 15 + 5000 * 1.5 + 200 * 75) / 1_000_000;
-    expect(turnSpan!.values[4]).toBeCloseTo(expectedCost, 6);
+    expect(turnSpan?.values[4]).toBeCloseTo(expectedCost, 6);
 
     // Streaming: turn wall_ms should span from first to last assistant msg (2s - 1s = 1000ms)
-    expect(turnSpan!.values[0]).toBe(1000);
+    expect(turnSpan?.values[0]).toBe(1000);
   });
 
   it('handles parallel tool calls as sibling spans', () => {

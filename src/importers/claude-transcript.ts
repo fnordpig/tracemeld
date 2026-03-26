@@ -86,16 +86,16 @@ function truncate(s: string, len: number): string {
 function extractToolDetail(name: string, input: Record<string, unknown>): string {
   switch (name) {
     case 'Bash':
-      return truncate(String(input['description'] ?? input['command'] ?? ''), 40);
+      return truncate((input['description'] as string | undefined) ?? (input['command'] as string | undefined) ?? '', 40);
     case 'Read':
     case 'Write':
     case 'Edit':
     case 'Glob':
-      return truncate(String(input['file_path'] ?? input['pattern'] ?? ''), 40);
+      return truncate((input['file_path'] as string | undefined) ?? (input['pattern'] as string | undefined) ?? '', 40);
     case 'Grep':
-      return truncate(String(input['pattern'] ?? ''), 40);
+      return truncate((input['pattern'] as string | undefined) ?? '', 40);
     case 'Agent':
-      return truncate(String(input['description'] ?? input['prompt'] ?? ''), 40);
+      return truncate((input['description'] as string | undefined) ?? (input['prompt'] as string | undefined) ?? '', 40);
     default:
       return '';
   }

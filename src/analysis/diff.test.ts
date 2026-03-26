@@ -278,7 +278,7 @@ describe('diffBaselines', () => {
     expect(result.improvements.length).toBeGreaterThan(0);
     const hot = result.improvements.find((e) => e.name === 'hot');
     expect(hot).toBeDefined();
-    expect(hot!.delta.weight).toBe(-500);
+    expect(hot?.delta.weight).toBe(-500);
   });
 
   it('uses explicit dimension_map', () => {

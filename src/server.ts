@@ -284,7 +284,7 @@ export function createServer(): McpServer {
 
         if (isXctrace) {
           state.reset();
-          const imported = await importXctrace(
+          const imported = importXctrace(
             args.source,
             args.lane_name ?? 'imported',
           );

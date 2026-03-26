@@ -15,7 +15,7 @@ export function detectFormat(content: string): ImportFormat {
         if (
           typeof obj['sessionId'] === 'string' &&
           typeof obj['type'] === 'string' &&
-          ['user', 'assistant', 'system'].includes(obj['type'] as string)
+          ['user', 'assistant', 'system'].includes(obj['type'])
         ) {
           return 'claude_transcript';
         }
