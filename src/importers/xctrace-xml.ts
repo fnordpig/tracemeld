@@ -20,6 +20,7 @@ export function parseXctraceXml(xml: string): XctraceRow[] {
     attributeNamePrefix: '@_',
     textNodeName: '#text',
     isArray: (name) => name === 'row' || name === 'node',
+    processEntities: false,
   });
 
   const doc = parser.parse(xml) as Record<string, unknown>;
