@@ -22,7 +22,7 @@ export function detectAgentSprawl(profile: Profile): PatternMatch[] {
   // Check args for total_tokens if available
   let totalAgentTokens = 0;
   for (const s of agentSpans) {
-    totalAgentTokens += (s.args?.total_tokens as number) ?? 0;
+    totalAgentTokens += typeof s.args.total_tokens === 'number' ? s.args.total_tokens : 0;
   }
 
   // Flag if many agents with high cumulative cost

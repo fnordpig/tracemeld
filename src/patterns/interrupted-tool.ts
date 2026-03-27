@@ -13,7 +13,7 @@ export function detectInterruptedTool(profile: Profile): PatternMatch[] {
     // Skip session/turn spans — only flag tool-level interruptions
     if (kind === 'session' || kind === 'turn' || kind === 'llm_turn' || kind === 'user_input') continue;
 
-    const interrupted = span.args?.interrupted === true ||
+    const interrupted = span.args.interrupted === true ||
       (typeof span.error === 'string' && span.error.toLowerCase().includes('interrupt'));
 
     if (interrupted) {
@@ -25,7 +25,7 @@ export function detectInterruptedTool(profile: Profile): PatternMatch[] {
           evidence: { frame: frameName, error: span.error },
         },
         span_ids: [span.id],
-        counterfactual_savings: valuesToRecord(profile, span.values.map(v => v ?? 0)),
+        counterfactual_savings: valuesToRecord(profile, span.values.map(v => v)),
         recommendation: 'Interrupted tools waste the tokens spent launching them. Consider why tools are being interrupted.',
       });
     }

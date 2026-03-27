@@ -21,7 +21,7 @@ describe('detectAgentSprawl', () => {
     expect(matches[0].pattern.name).toBe('agent_sprawl');
     expect(matches[0].pattern.severity).toBe('info');
     expect(matches[0].span_ids).toHaveLength(6);
-    expect((matches[0].pattern.evidence as Record<string, unknown>).agent_count).toBe(6);
+    expect(matches[0].pattern.evidence.agent_count).toBe(6);
   });
 
   it('does not flag fewer than 5 agents', () => {

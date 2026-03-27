@@ -461,13 +461,14 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('file_read:');
     });
     expect(toolSpan).toBeDefined();
+    if (!toolSpan) return;
 
     // input_chars = length of JSON.stringify({ file_path: '/src/main.ts' })
     const expectedInputChars = JSON.stringify({ file_path: '/src/main.ts' }).length;
-    expect(toolSpan!.values[6]).toBe(expectedInputChars);
+    expect(toolSpan.values[6]).toBe(expectedInputChars);
 
     // result_chars = length of 'const x = 42;\nexport default x;\n'
-    expect(toolSpan!.values[7]).toBe('const x = 42;\nexport default x;\n'.length);
+    expect(toolSpan.values[7]).toBe('const x = 42;\nexport default x;\n'.length);
   });
 
   it('populates cache_creation_tokens on turn spans', () => {
@@ -508,11 +509,12 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('turn:');
     });
     expect(turnSpan).toBeDefined();
-    expect(turnSpan!.values[5]).toBe(3000); // cache_creation_tokens at index 5
+    if (!turnSpan) return;
+    expect(turnSpan.values[5]).toBe(3000); // cache_creation_tokens at index 5
 
     // Cost should include cache creation: (100*15 + 500*1.5 + 3000*3.75 + 20*75) / 1_000_000
     const expectedCost = (100 * 15 + 500 * 1.5 + 3000 * 3.75 + 20 * 75) / 1_000_000;
-    expect(turnSpan!.values[4]).toBeCloseTo(expectedCost, 6);
+    expect(turnSpan.values[4]).toBeCloseTo(expectedCost, 6);
   });
 
   it('enriches tool span args from toolUseResult metadata', () => {
@@ -568,9 +570,10 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('Bash:');
     });
     expect(bashSpan).toBeDefined();
-    expect(bashSpan!.args.stdout_size).toBe(6); // 'hello\n'.length
+    if (!bashSpan) return;
+    expect(bashSpan.args.stdout_size).toBe(6); // 'hello\n'.length
     // interrupted is falsy, so it should not be set
-    expect(bashSpan!.args.interrupted).toBeUndefined();
+    expect(bashSpan.args.interrupted).toBeUndefined();
   });
 
   it('sets file_path from TUR and uses it in frame name', () => {
@@ -626,10 +629,11 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('file_read:');
     });
     expect(readSpan).toBeDefined();
-    expect(readSpan!.args.file_path).toBe('/src/foo.ts');
+    if (!readSpan) return;
+    expect(readSpan.args.file_path).toBe('/src/foo.ts');
 
     // Frame name should use file_read kind
-    const frame = result.profile.frames[readSpan!.frame_index];
+    const frame = result.profile.frames[readSpan.frame_index];
     expect(frame.name).toBe('file_read:/src/foo.ts');
   });
 
@@ -756,7 +760,8 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('Bash:');
     });
     expect(bashSpan).toBeDefined();
-    expect(bashSpan!.error).toBe('Command failed with exit code 1');
+    if (!bashSpan) return;
+    expect(bashSpan.error).toBe('Command failed with exit code 1');
   });
 
   it('gracefully degrades when toolUseResult is absent', () => {
@@ -814,12 +819,13 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('file_read:');
     });
     expect(readSpan).toBeDefined();
+    if (!readSpan) return;
     // Args should be empty (no TUR)
-    expect(Object.keys(readSpan!.args).length).toBe(0);
+    expect(Object.keys(readSpan.args).length).toBe(0);
     // No error
-    expect(readSpan!.error).toBeUndefined();
+    expect(readSpan.error).toBeUndefined();
     // result_chars should still be populated from tool_result content
-    expect(readSpan!.values[7]).toBe('file content here'.length);
+    expect(readSpan.values[7]).toBe('file content here'.length);
   });
 
   it('populates result_chars from array tool_result content blocks', () => {
@@ -877,8 +883,9 @@ describe('importClaudeTranscript', () => {
       return frame.name.startsWith('Bash:');
     });
     expect(bashSpan).toBeDefined();
+    if (!bashSpan) return;
     // 'file1.ts\n'.length + 'file2.ts\n'.length = 9 + 9 = 18
-    expect(bashSpan!.values[7]).toBe(18);
+    expect(bashSpan.values[7]).toBe(18);
   });
 
   it('excludes idle spans when include_idle is false', () => {
@@ -994,7 +1001,7 @@ describe('reduce-session ontology integration', () => {
     const content = lines.map(l => JSON.stringify(l)).join('\n');
     const result = importClaudeTranscript(content, 'test');
 
-    const meta = result.profile.metadata as Record<string, unknown>;
+    const meta = result.profile.metadata;
     const reduction = meta.reduction as Record<string, unknown>;
     expect(reduction).toBeDefined();
     expect(reduction.coverage_pct).toBe(67); // 2 of 3 lines
@@ -1023,9 +1030,10 @@ describe('reduce-session ontology integration', () => {
     const turnSpan = result.profile.lanes[0].spans.find(s =>
       result.profile.frames[s.frame_index]?.name.startsWith('turn:'));
     expect(turnSpan).toBeDefined();
-    expect(turnSpan!.args.ontology_class).toBe('IMPLEMENTATION');
-    expect(turnSpan!.args.reduce_route).toBe('DISTILL');
-    expect(turnSpan!.args.distilled).toBe(true);
+    if (!turnSpan) return;
+    expect(turnSpan.args.ontology_class).toBe('IMPLEMENTATION');
+    expect(turnSpan.args.reduce_route).toBe('DISTILL');
+    expect(turnSpan.args.distilled).toBe(true);
   });
 
   it('omits reduction metadata when no _reduce tags present', () => {
@@ -1040,7 +1048,7 @@ describe('reduce-session ontology integration', () => {
     ];
     const content = lines.map(l => JSON.stringify(l)).join('\n');
     const result = importClaudeTranscript(content, 'test');
-    const meta = result.profile.metadata as Record<string, unknown>;
+    const meta = result.profile.metadata;
     expect(meta.reduction).toBeUndefined();
   });
 });
