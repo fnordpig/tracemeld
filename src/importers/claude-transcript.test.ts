@@ -50,7 +50,7 @@ describe('importClaudeTranscript', () => {
     const mainLane = result.profile.lanes[0];
     const llmSpans = mainLane.spans.filter((s) => {
       const frame = result.profile.frames[s.frame_index];
-      return frame.name.startsWith('llm_turn:');
+      return frame.name.startsWith('turn:');
     });
     expect(llmSpans.length).toBe(1);
 
@@ -171,7 +171,7 @@ describe('importClaudeTranscript', () => {
     // Find the LLM turn span
     const turnSpan = mainLane.spans.find((s) => {
       const frame = result.profile.frames[s.frame_index];
-      return frame.name.startsWith('llm_turn:');
+      return frame.name.startsWith('turn:');
     });
     expect(turnSpan).toBeDefined();
 
@@ -236,7 +236,7 @@ describe('importClaudeTranscript', () => {
     // Find Read tool spans
     const toolSpans = mainLane.spans.filter((s) => {
       const frame = result.profile.frames[s.frame_index];
-      return frame.name.startsWith('Read:');
+      return frame.name.startsWith('file_read:');
     });
     expect(toolSpans.length).toBe(2);
 
@@ -356,6 +356,529 @@ describe('importClaudeTranscript', () => {
     expect(result.value_types).toContain('wall_ms');
     expect(result.value_types).toContain('input_tokens');
     expect(result.value_types).toContain('cost_usd');
+  });
+
+  it('has 8 value types including cache_creation, input_chars, and result_chars', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'hello' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'hi' }],
+          usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0 },
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const vtKeys = result.profile.value_types.map((vt) => vt.key);
+    expect(vtKeys).toEqual([
+      'wall_ms',
+      'input_tokens',
+      'output_tokens',
+      'cache_read_tokens',
+      'cost_usd',
+      'cache_creation_tokens',
+      'input_chars',
+      'result_chars',
+    ]);
+    expect(result.profile.value_types.length).toBe(8);
+
+    // All spans should have 8 values
+    for (const span of result.profile.lanes[0].spans) {
+      expect(span.values.length).toBe(8);
+    }
+  });
+
+  it('populates input_chars and result_chars on tool spans', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'read a file' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Read',
+              input: { file_path: '/src/main.ts' },
+            },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 't1',
+              content: 'const x = 42;\nexport default x;\n',
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    // Find the file_read tool span
+    const toolSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('file_read:');
+    });
+    expect(toolSpan).toBeDefined();
+
+    // input_chars = length of JSON.stringify({ file_path: '/src/main.ts' })
+    const expectedInputChars = JSON.stringify({ file_path: '/src/main.ts' }).length;
+    expect(toolSpan!.values[6]).toBe(expectedInputChars);
+
+    // result_chars = length of 'const x = 42;\nexport default x;\n'
+    expect(toolSpan!.values[7]).toBe('const x = 42;\nexport default x;\n'.length);
+  });
+
+  it('populates cache_creation_tokens on turn spans', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'hello' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Hi there!' }],
+          usage: {
+            input_tokens: 100,
+            output_tokens: 20,
+            cache_read_input_tokens: 500,
+            cache_creation_input_tokens: 3000,
+          },
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    const turnSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('turn:');
+    });
+    expect(turnSpan).toBeDefined();
+    expect(turnSpan!.values[5]).toBe(3000); // cache_creation_tokens at index 5
+
+    // Cost should include cache creation: (100*15 + 500*1.5 + 3000*3.75 + 20*75) / 1_000_000
+    const expectedCost = (100 * 15 + 500 * 1.5 + 3000 * 3.75 + 20 * 75) / 1_000_000;
+    expect(turnSpan!.values[4]).toBeCloseTo(expectedCost, 6);
+  });
+
+  it('enriches tool span args from toolUseResult metadata', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'read a file' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Bash',
+              input: { command: 'echo hello', description: 'Print hello' },
+            },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        toolUseResult: { stdout: 'hello\n', interrupted: false },
+        sourceToolAssistantUUID: 'a1',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 't1', content: 'hello\n' }],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    const bashSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('Bash:');
+    });
+    expect(bashSpan).toBeDefined();
+    expect(bashSpan!.args.stdout_size).toBe(6); // 'hello\n'.length
+    // interrupted is falsy, so it should not be set
+    expect(bashSpan!.args.interrupted).toBeUndefined();
+  });
+
+  it('sets file_path from TUR and uses it in frame name', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'read a file' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Read',
+              input: { file_path: '/src/foo.ts' },
+            },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        toolUseResult: { filePath: '/src/foo.ts' },
+        sourceToolAssistantUUID: 'a1',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 't1', content: 'file contents' }],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    const readSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('file_read:');
+    });
+    expect(readSpan).toBeDefined();
+    expect(readSpan!.args.file_path).toBe('/src/foo.ts');
+
+    // Frame name should use file_read kind
+    const frame = result.profile.frames[readSpan!.frame_index];
+    expect(frame.name).toBe('file_read:/src/foo.ts');
+  });
+
+  it('uses turn: and file_read:/file_write: frame name conventions', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'edit a file' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 't1', name: 'Edit', input: { file_path: '/a.ts' } },
+            { type: 'tool_use', id: 't2', name: 'Write', input: { file_path: '/b.ts' } },
+            { type: 'tool_use', id: 't3', name: 'Read', input: { file_path: '/c.ts' } },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'ok' },
+            { type: 'tool_result', tool_use_id: 't2', content: 'ok' },
+            { type: 'tool_result', tool_use_id: 't3', content: 'file c' },
+          ],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const frames = result.profile.frames;
+    const mainLane = result.profile.lanes[0];
+
+    // Turn frame should use 'turn:' prefix
+    const turnSpan = mainLane.spans.find((s) => frames[s.frame_index].name.startsWith('turn:'));
+    expect(turnSpan).toBeDefined();
+
+    // Edit/Write should use 'file_write:' prefix
+    const writeSpans = mainLane.spans.filter((s) =>
+      frames[s.frame_index].name.startsWith('file_write:'),
+    );
+    expect(writeSpans.length).toBe(2); // Edit and Write both map to file_write
+
+    // Read should use 'file_read:' prefix
+    const readSpans = mainLane.spans.filter((s) =>
+      frames[s.frame_index].name.startsWith('file_read:'),
+    );
+    expect(readSpans.length).toBe(1);
+  });
+
+  it('captures tool errors from is_error tool_results', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'run a command' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Bash',
+              input: { command: 'exit 1', description: 'Fail' },
+            },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 't1',
+              is_error: true,
+              content: 'Command failed with exit code 1',
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    const bashSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('Bash:');
+    });
+    expect(bashSpan).toBeDefined();
+    expect(bashSpan!.error).toBe('Command failed with exit code 1');
+  });
+
+  it('gracefully degrades when toolUseResult is absent', () => {
+    // No TUR fields on any line — should still work
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'run a command' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't1',
+              name: 'Read',
+              input: { file_path: '/some/file.ts' },
+            },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'tool_result', tool_use_id: 't1', content: 'file content here' },
+          ],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    // Should still create the tool span with file_read prefix
+    const readSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('file_read:');
+    });
+    expect(readSpan).toBeDefined();
+    // Args should be empty (no TUR)
+    expect(Object.keys(readSpan!.args).length).toBe(0);
+    // No error
+    expect(readSpan!.error).toBeUndefined();
+    // result_chars should still be populated from tool_result content
+    expect(readSpan!.values[7]).toBe('file content here'.length);
+  });
+
+  it('populates result_chars from array tool_result content blocks', () => {
+    const content = makeTranscript([
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:00.000Z',
+        uuid: 'u1',
+        parentUuid: null,
+        sessionId: 's1',
+        message: { role: 'user', content: 'read something' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-03-16T02:00:01.000Z',
+        uuid: 'a1',
+        parentUuid: 'u1',
+        requestId: 'req1',
+        sessionId: 's1',
+        message: {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } },
+          ],
+          usage: { input_tokens: 50, output_tokens: 10, cache_read_input_tokens: 0 },
+        },
+      },
+      {
+        type: 'user',
+        timestamp: '2026-03-16T02:00:02.000Z',
+        uuid: 'u2',
+        parentUuid: 'a1',
+        sessionId: 's1',
+        message: {
+          role: 'user',
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 't1',
+              content: [
+                { type: 'text', text: 'file1.ts\n' },
+                { type: 'text', text: 'file2.ts\n' },
+              ],
+            },
+          ],
+        },
+      },
+    ]);
+
+    const result = importClaudeTranscript(content, 'test');
+    const mainLane = result.profile.lanes[0];
+
+    const bashSpan = mainLane.spans.find((s) => {
+      const frame = result.profile.frames[s.frame_index];
+      return frame.name.startsWith('Bash:');
+    });
+    expect(bashSpan).toBeDefined();
+    // 'file1.ts\n'.length + 'file2.ts\n'.length = 9 + 9 = 18
+    expect(bashSpan!.values[7]).toBe(18);
   });
 
   it('excludes idle spans when include_idle is false', () => {

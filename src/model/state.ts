@@ -5,6 +5,9 @@ import { PatternRegistry } from '../patterns/registry.js';
 import { detectRetryLoop } from '../patterns/retry-loop.js';
 import { detectRedundantRead } from '../patterns/redundant-read.js';
 import { detectBlindEdit } from '../patterns/blind-edit.js';
+import { detectInterruptedTool } from '../patterns/interrupted-tool.js';
+import { detectAgentSprawl } from '../patterns/agent-sprawl.js';
+import { detectContextBloat } from '../patterns/context-bloat.js';
 
 export class ProfilerState {
   builder: ProfileBuilder;
@@ -22,6 +25,9 @@ export class ProfilerState {
     this.registry.register(detectRetryLoop);
     this.registry.register(detectRedundantRead);
     this.registry.register(detectBlindEdit);
+    this.registry.register(detectInterruptedTool);
+    this.registry.register(detectAgentSprawl);
+    this.registry.register(detectContextBloat);
   }
 
   /** Discard all profile data and start fresh. */

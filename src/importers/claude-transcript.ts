@@ -14,6 +14,8 @@ interface TranscriptLine {
   requestId?: string;
   isSidechain?: boolean;
   message?: TranscriptMessage;
+  toolUseResult?: Record<string, unknown>;
+  sourceToolAssistantUUID?: string;
 }
 
 interface TranscriptMessage {
@@ -31,6 +33,7 @@ interface ContentBlock {
   input?: Record<string, unknown>;
   tool_use_id?: string; // tool_result reference
   content?: string | ContentBlock[];
+  is_error?: boolean; // tool_result error flag
 }
 
 interface TokenUsage {
@@ -49,6 +52,8 @@ export interface ClaudeTranscriptOptions {
   output_cost_per_m?: number;
   /** Cost per million cache read tokens. Default: 1.5 (Opus). */
   cache_read_cost_per_m?: number;
+  /** Cost per million cache creation tokens. Default: 3.75 (Opus). */
+  cache_creation_cost_per_m?: number;
   /** Include user_input idle spans. Default: true. */
   include_idle?: boolean;
 }
@@ -60,6 +65,9 @@ const INPUT_TOKENS = 1;
 const OUTPUT_TOKENS = 2;
 const CACHE_READ_TOKENS = 3;
 const COST_USD = 4;
+const CACHE_CREATION_TOKENS = 5;
+const INPUT_CHARS = 6;
+const RESULT_CHARS = 7;
 
 const VALUE_TYPES: ValueType[] = [
   { key: 'wall_ms', unit: 'milliseconds', description: 'Wall-clock duration' },
@@ -67,10 +75,13 @@ const VALUE_TYPES: ValueType[] = [
   { key: 'output_tokens', unit: 'none', description: 'Output/completion tokens generated' },
   { key: 'cache_read_tokens', unit: 'none', description: 'Tokens read from prompt cache' },
   { key: 'cost_usd', unit: 'none', description: 'Estimated dollar cost' },
+  { key: 'cache_creation_tokens', unit: 'none', description: 'Cache creation input tokens' },
+  { key: 'input_chars', unit: 'none', description: 'Characters sent to tool (command/input size)' },
+  { key: 'result_chars', unit: 'none', description: 'Characters returned from tool (output/result size)' },
 ];
 
 function emptyValues(): number[] {
-  return [0, 0, 0, 0, 0];
+  return [0, 0, 0, 0, 0, 0, 0, 0];
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -101,6 +112,15 @@ function extractToolDetail(name: string, input: Record<string, unknown>): string
   }
 }
 
+function toolNameToFrameKind(name: string): string {
+  switch (name) {
+    case 'Read': return 'file_read';
+    case 'Write':
+    case 'Edit': return 'file_write';
+    default: return name;
+  }
+}
+
 function extractUserText(content: string | ContentBlock[] | undefined): string {
   if (typeof content === 'string') return truncate(content, 40);
   if (Array.isArray(content)) {
@@ -113,6 +133,10 @@ function extractUserText(content: string | ContentBlock[] | undefined): string {
 
 // ── Main importer ────────────────────────────────────────────────
 
+interface ToolUseWithSource extends ContentBlock {
+  assistantUuid: string;
+}
+
 export function importClaudeTranscript(
   content: string,
   name: string,
@@ -121,6 +145,7 @@ export function importClaudeTranscript(
   const inputCostPerM = options?.input_cost_per_m ?? 15;
   const outputCostPerM = options?.output_cost_per_m ?? 75;
   const cacheReadCostPerM = options?.cache_read_cost_per_m ?? 1.5;
+  const cacheCreationCostPerM = options?.cache_creation_cost_per_m ?? 3.75;
   const includeIdle = options?.include_idle ?? false;
 
   // Phase 1: Parse JSONL
@@ -139,6 +164,48 @@ export function importClaudeTranscript(
     throw new Error('Empty or invalid Claude transcript');
   }
 
+  // Build toolUseResult map: assistantUUID → { tur, resultTs }
+  const turByAssistantUuid = new Map<string, { tur: Record<string, unknown>; resultTs: number }>();
+  for (const line of lines) {
+    if (line.toolUseResult && line.sourceToolAssistantUUID) {
+      turByAssistantUuid.set(line.sourceToolAssistantUUID, {
+        tur: line.toolUseResult,
+        resultTs: parseTimestamp(line.timestamp),
+      });
+    }
+  }
+
+  // Build tool_result size and error maps
+  const toolResultSize = new Map<string, number>();
+  const toolResultErrors = new Map<string, string>();
+  for (const line of lines) {
+    if (line.type !== 'user') continue;
+    const msg = line.message;
+    if (!msg?.content || !Array.isArray(msg.content)) continue;
+    for (const block of msg.content) {
+      if (block.type === 'tool_result' && block.tool_use_id) {
+        // Measure result size
+        let size = 0;
+        if (typeof block.content === 'string') {
+          size = block.content.length;
+        } else if (Array.isArray(block.content)) {
+          for (const sub of block.content) {
+            if (sub.type === 'text' && typeof sub.text === 'string') {
+              size += sub.text.length;
+            }
+          }
+        }
+        toolResultSize.set(block.tool_use_id, size);
+
+        // Track errors
+        if (block.is_error) {
+          const errorText = typeof block.content === 'string' ? block.content.slice(0, 200) : 'error';
+          toolResultErrors.set(block.tool_use_id, errorText);
+        }
+      }
+    }
+  }
+
   const frameTable = new FrameTable();
   let spanId = 0;
   const nextSpanId = () => `ct_${spanId++}`;
@@ -148,7 +215,7 @@ export function importClaudeTranscript(
     requestId: string;
     firstTs: number;
     lastTs: number;
-    toolUses: ContentBlock[];
+    toolUses: ToolUseWithSource[];
     usage: TokenUsage | null;
     parentUuid: string | null;
   }
@@ -176,12 +243,12 @@ export function importClaudeTranscript(
     if (ts < turn.firstTs) turn.firstTs = ts;
     if (ts > turn.lastTs) turn.lastTs = ts;
 
-    // Collect tool_use blocks
+    // Collect tool_use blocks with source assistant UUID
     const msg = line.message;
     if (msg?.content && Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block.type === 'tool_use') {
-          turn.toolUses.push(block);
+          turn.toolUses.push({ ...block, assistantUuid: line.uuid });
         }
       }
     }
@@ -270,7 +337,7 @@ export function importClaudeTranscript(
 
     // LLM turn span
     const turnFrameIdx = frameTable.getOrInsert({
-      name: `llm_turn:${turn.requestId.slice(0, 16)}`,
+      name: `turn:${turn.requestId.slice(0, 16)}`,
     });
     const turnSpanId = nextSpanId();
     const turnValues = emptyValues();
@@ -280,11 +347,14 @@ export function importClaudeTranscript(
       const inputTok = turn.usage.input_tokens ?? 0;
       const outputTok = turn.usage.output_tokens ?? 0;
       const cacheRead = turn.usage.cache_read_input_tokens ?? 0;
+      const cacheCreation = turn.usage.cache_creation_input_tokens ?? 0;
       turnValues[INPUT_TOKENS] = inputTok;
       turnValues[OUTPUT_TOKENS] = outputTok;
       turnValues[CACHE_READ_TOKENS] = cacheRead;
+      turnValues[CACHE_CREATION_TOKENS] = cacheCreation;
       turnValues[COST_USD] =
-        (inputTok * inputCostPerM + cacheRead * cacheReadCostPerM + outputTok * outputCostPerM) /
+        (inputTok * inputCostPerM + cacheRead * cacheReadCostPerM +
+          cacheCreation * cacheCreationCostPerM + outputTok * outputCostPerM) /
         1_000_000;
     }
 
@@ -305,18 +375,54 @@ export function importClaudeTranscript(
     for (const toolUse of turn.toolUses) {
       if (!toolUse.id || !toolUse.name) continue;
 
-      const resultTs = toolResultTs.get(toolUse.id);
-      const toolStart = turn.firstTs; // tool_use emitted at turn time
-      const toolEnd = resultTs ?? turn.lastTs;
+      // Look up TUR by the assistant UUID that emitted this tool_use
+      const turEntry = turByAssistantUuid.get(toolUse.assistantUuid);
+      const tur = turEntry?.tur;
 
-      const detail = extractToolDetail(toolUse.name, toolUse.input ?? {});
-      const frameName = detail ? `${toolUse.name}:${detail}` : toolUse.name;
+      const toolEnd = turEntry?.resultTs ?? toolResultTs.get(toolUse.id) ?? turn.lastTs;
+      const toolStart = turn.firstTs; // tool_use emitted at turn time
+
+      // Build args from TUR metadata
+      const toolSpanArgs: Record<string, unknown> = {};
+      if (tur) {
+        // Bash
+        if (toolUse.name === 'Bash') {
+          if (typeof tur.stdout === 'string') toolSpanArgs.stdout_size = tur.stdout.length;
+          if (tur.interrupted) toolSpanArgs.interrupted = true;
+        }
+        // Read/Write/Edit — extract file_path from TUR
+        const fp = tur.filePath ?? (typeof tur.file === 'object' && tur.file !== null ? (tur.file as Record<string, unknown>).filePath : undefined);
+        if (fp) toolSpanArgs.file_path = fp;
+        // Agent
+        if (toolUse.name === 'Agent') {
+          if (tur.totalTokens) toolSpanArgs.total_tokens = tur.totalTokens;
+          if (tur.totalDurationMs) toolSpanArgs.total_duration_ms = tur.totalDurationMs;
+          if (tur.agentId) toolSpanArgs.agent_id = tur.agentId;
+          if (tur.totalToolUseCount) toolSpanArgs.total_tool_use_count = tur.totalToolUseCount;
+        }
+        // Grep
+        if (toolUse.name === 'Grep' && tur.numFiles) toolSpanArgs.num_files = tur.numFiles;
+      }
+
+      // Frame name: prefer TUR file_path, fall back to extractToolDetail
+      const fileArg = toolSpanArgs.file_path as string | undefined;
+      const detail = fileArg ? truncate(fileArg, 60) : extractToolDetail(toolUse.name, toolUse.input ?? {});
+      const kind = toolNameToFrameKind(toolUse.name);
+      const frameName = detail ? `${kind}:${detail}` : kind;
       const toolFrameIdx = frameTable.getOrInsert({ name: frameName });
 
       const toolSpanId = nextSpanId();
       const toolValues = emptyValues();
       toolValues[WALL_MS] = toolEnd - toolStart;
 
+      // Track input size (chars sent to tool)
+      const inputJson = JSON.stringify(toolUse.input ?? {});
+      toolValues[INPUT_CHARS] = inputJson.length;
+
+      // Track result size (chars returned from tool)
+      toolValues[RESULT_CHARS] = toolResultSize.get(toolUse.id) ?? 0;
+
+      const errorText = toolResultErrors.get(toolUse.id);
       const toolSpan: Span = {
         id: toolSpanId,
         frame_index: toolFrameIdx,
@@ -324,7 +430,8 @@ export function importClaudeTranscript(
         start_time: toolStart,
         end_time: toolEnd,
         values: toolValues,
-        args: {},
+        args: toolSpanArgs,
+        error: errorText ?? undefined,
         children: [],
       };
       mainSpans.push(toolSpan);
