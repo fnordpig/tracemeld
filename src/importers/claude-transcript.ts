@@ -5,6 +5,15 @@ import { FrameTable } from '../model/frame-table.js';
 
 // ── JSONL message types ──────────────────────────────────────────
 
+interface ReduceTag {
+  v?: number;
+  structural?: boolean;
+  profile?: string;
+  cls?: string;       // ontology class: IMPLEMENTATION, LOG_OUTPUT, REASONING, etc.
+  route?: string;     // reduction route: KEEP, DISTILL, HEURISTIC
+  distilled?: boolean; // whether LLM distillation has been applied
+}
+
 interface TranscriptLine {
   type: string;
   timestamp: string;
@@ -16,6 +25,7 @@ interface TranscriptLine {
   message?: TranscriptMessage;
   toolUseResult?: Record<string, unknown>;
   sourceToolAssistantUUID?: string;
+  _reduce?: ReduceTag;
 }
 
 interface TranscriptMessage {
@@ -175,6 +185,25 @@ export function importClaudeTranscript(
     }
   }
 
+  // Phase 2b: Collect reduce-session ontology tags
+  const reduceByUuid = new Map<string, ReduceTag>();
+  const reductionStats = { total: lines.length, reduced: 0, classified: 0, distilled: 0, routes: {} as Record<string, number>, classes: {} as Record<string, number> };
+  for (const line of lines) {
+    if (line._reduce) {
+      reductionStats.reduced++;
+      reduceByUuid.set(line.uuid, line._reduce);
+      const tag = line._reduce;
+      if (tag.cls) {
+        reductionStats.classified++;
+        reductionStats.classes[tag.cls] = (reductionStats.classes[tag.cls] ?? 0) + 1;
+      }
+      if (tag.route) {
+        reductionStats.routes[tag.route] = (reductionStats.routes[tag.route] ?? 0) + 1;
+      }
+      if (tag.distilled) reductionStats.distilled++;
+    }
+  }
+
   // Build tool_result size and error maps
   const toolResultSize = new Map<string, number>();
   const toolResultErrors = new Map<string, string>();
@@ -218,6 +247,7 @@ export function importClaudeTranscript(
     toolUses: ToolUseWithSource[];
     usage: TokenUsage | null;
     parentUuid: string | null;
+    reduceTags: ReduceTag[];  // ontology tags from messages in this turn
   }
 
   const turnMap = new Map<string, LlmTurn>();
@@ -237,11 +267,16 @@ export function importClaudeTranscript(
         toolUses: [],
         usage: null,
         parentUuid: line.parentUuid,
+        reduceTags: [],
       };
       turnMap.set(line.requestId, turn);
     }
     if (ts < turn.firstTs) turn.firstTs = ts;
     if (ts > turn.lastTs) turn.lastTs = ts;
+
+    // Collect reduce-session ontology tags for this turn
+    const reduceTag = reduceByUuid.get(line.uuid);
+    if (reduceTag) turn.reduceTags.push(reduceTag);
 
     // Collect tool_use blocks with source assistant UUID
     const msg = line.message;
@@ -358,6 +393,28 @@ export function importClaudeTranscript(
         1_000_000;
     }
 
+    // Derive dominant ontology class from reduce-session tags
+    const turnArgs: Record<string, unknown> = {};
+    if (turn.reduceTags.length > 0) {
+      const classCounts = new Map<string, number>();
+      let route: string | undefined;
+      let distilled = false;
+      for (const tag of turn.reduceTags) {
+        if (tag.cls) classCounts.set(tag.cls, (classCounts.get(tag.cls) ?? 0) + 1);
+        if (tag.route) route = tag.route;
+        if (tag.distilled) distilled = true;
+      }
+      // Pick the most common class
+      let dominantClass = '';
+      let maxCount = 0;
+      for (const [cls, count] of classCounts) {
+        if (count > maxCount) { maxCount = count; dominantClass = cls; }
+      }
+      if (dominantClass) turnArgs.ontology_class = dominantClass;
+      if (route) turnArgs.reduce_route = route;
+      if (distilled) turnArgs.distilled = true;
+    }
+
     const turnSpan: Span = {
       id: turnSpanId,
       frame_index: turnFrameIdx,
@@ -365,7 +422,7 @@ export function importClaudeTranscript(
       start_time: turn.firstTs,
       end_time: turn.lastTs,
       values: turnValues,
-      args: {},
+      args: turnArgs,
       children: [],
     };
     mainSpans.push(turnSpan);
@@ -474,6 +531,13 @@ export function importClaudeTranscript(
         session_id: lines[0].sessionId,
         turn_count: turnMap.size,
         tool_call_count: [...turnMap.values()].reduce((sum, t) => sum + t.toolUses.length, 0),
+        reduction: reductionStats.reduced > 0 ? {
+          coverage_pct: Math.round(reductionStats.reduced / reductionStats.total * 100),
+          classified_pct: Math.round(reductionStats.classified / reductionStats.total * 100),
+          distilled_count: reductionStats.distilled,
+          routes: reductionStats.routes,
+          classes: reductionStats.classes,
+        } : undefined,
       },
     },
   };

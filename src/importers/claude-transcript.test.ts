@@ -977,3 +977,70 @@ describe('detectFormat – claude_transcript', () => {
     expect(detectFormat(content)).toBe('chrome_trace');
   });
 });
+
+describe('reduce-session ontology integration', () => {
+  it('populates reduction metadata when _reduce tags are present', () => {
+    const lines = [
+      { type: 'system', uuid: 's1', parentUuid: null, sessionId: 'sess1', timestamp: '2025-01-01T00:00:00Z',
+        message: { role: 'system', content: 'You are Claude.' } },
+      { type: 'assistant', uuid: 'a1', parentUuid: 's1', sessionId: 'sess1', timestamp: '2025-01-01T00:00:01Z',
+        requestId: 'req1', message: { role: 'assistant', content: [{ type: 'text', text: 'hello' }],
+          usage: { input_tokens: 100, output_tokens: 50 } },
+        _reduce: { v: 1, structural: true, cls: 'IMPLEMENTATION', route: 'DISTILL' } },
+      { type: 'user', uuid: 'u1', parentUuid: 'a1', sessionId: 'sess1', timestamp: '2025-01-01T00:00:02Z',
+        message: { role: 'user', content: 'ok' },
+        _reduce: { v: 1, structural: true, cls: 'INSTRUCTION', route: 'KEEP' } },
+    ];
+    const content = lines.map(l => JSON.stringify(l)).join('\n');
+    const result = importClaudeTranscript(content, 'test');
+
+    const meta = result.profile.metadata as Record<string, unknown>;
+    const reduction = meta.reduction as Record<string, unknown>;
+    expect(reduction).toBeDefined();
+    expect(reduction.coverage_pct).toBe(67); // 2 of 3 lines
+    expect(reduction.classified_pct).toBe(67);
+    expect((reduction.routes as Record<string, number>).DISTILL).toBe(1);
+    expect((reduction.routes as Record<string, number>).KEEP).toBe(1);
+    expect((reduction.classes as Record<string, number>).IMPLEMENTATION).toBe(1);
+    expect((reduction.classes as Record<string, number>).INSTRUCTION).toBe(1);
+  });
+
+  it('populates turn span args with ontology class', () => {
+    const lines = [
+      { type: 'system', uuid: 's1', parentUuid: null, sessionId: 'sess1', timestamp: '2025-01-01T00:00:00Z',
+        message: { role: 'system', content: 'You are Claude.' } },
+      { type: 'assistant', uuid: 'a1', parentUuid: 's1', sessionId: 'sess1', timestamp: '2025-01-01T00:00:01Z',
+        requestId: 'req1', message: { role: 'assistant', content: [{ type: 'text', text: 'implementing...' }],
+          usage: { input_tokens: 100, output_tokens: 50 } },
+        _reduce: { v: 1, cls: 'IMPLEMENTATION', route: 'DISTILL', distilled: true } },
+      { type: 'user', uuid: 'u1', parentUuid: 'a1', sessionId: 'sess1', timestamp: '2025-01-01T00:00:02Z',
+        message: { role: 'user', content: 'next' } },
+    ];
+    const content = lines.map(l => JSON.stringify(l)).join('\n');
+    const result = importClaudeTranscript(content, 'test');
+
+    // Find the turn span
+    const turnSpan = result.profile.lanes[0].spans.find(s =>
+      result.profile.frames[s.frame_index]?.name.startsWith('turn:'));
+    expect(turnSpan).toBeDefined();
+    expect(turnSpan!.args.ontology_class).toBe('IMPLEMENTATION');
+    expect(turnSpan!.args.reduce_route).toBe('DISTILL');
+    expect(turnSpan!.args.distilled).toBe(true);
+  });
+
+  it('omits reduction metadata when no _reduce tags present', () => {
+    const lines = [
+      { type: 'system', uuid: 's1', parentUuid: null, sessionId: 'sess1', timestamp: '2025-01-01T00:00:00Z',
+        message: { role: 'system', content: 'You are Claude.' } },
+      { type: 'assistant', uuid: 'a1', parentUuid: 's1', sessionId: 'sess1', timestamp: '2025-01-01T00:00:01Z',
+        requestId: 'req1', message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }],
+          usage: { input_tokens: 100, output_tokens: 50 } } },
+      { type: 'user', uuid: 'u1', parentUuid: 'a1', sessionId: 'sess1', timestamp: '2025-01-01T00:00:02Z',
+        message: { role: 'user', content: 'bye' } },
+    ];
+    const content = lines.map(l => JSON.stringify(l)).join('\n');
+    const result = importClaudeTranscript(content, 'test');
+    const meta = result.profile.metadata as Record<string, unknown>;
+    expect(meta.reduction).toBeUndefined();
+  });
+});
