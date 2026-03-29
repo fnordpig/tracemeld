@@ -60,6 +60,22 @@ All analysis is read-only against the loaded profile.
 | `spinpaths` | High wall-time spans with low useful output (busy-waiting, spinning). |
 | `starvations` | Idle lanes while others are active (lock contention, serialization). |
 
+### Baselines and diffing
+
+| Tool | Purpose |
+|---|---|
+| `save_baseline` | Snapshot current profile as a named baseline for later comparison. |
+| `list_baselines` | List saved baselines with their timestamps and tags. |
+| `diff_profile` | Compare current profile against a saved baseline. Reports per-function regressions and improvements across all cost dimensions with normalization. |
+
+### Guided workflows
+
+| Tool | Purpose |
+|---|---|
+| `performance_review` | Guided performance review of the current session. |
+| `optimize_for` | Targeted optimization guidance for a specific dimension. |
+| `optimization_loop` | A/B baseline workflow: save before, make changes, re-profile, diff. |
+
 ### Anti-pattern detection
 
 Built-in heuristics detect common LLM agent waste patterns:
@@ -67,18 +83,11 @@ Built-in heuristics detect common LLM agent waste patterns:
 - **Blind edits** — editing a file without reading it first
 - **Redundant reads** — reading the same file multiple times in a span
 - **Retry loops** — repeated failed attempts at the same operation
+- **Agent sprawl** — excessive token spend across too many parallel agents
+- **Interrupted tools** — tool calls that were abandoned before completion
+- **Context bloat** — reading large files that weren't meaningfully used
 
 These surface automatically in `hotspots`, `explain_span`, and `find_waste` results.
-
-### Baselines and diffing
-
-Save profile snapshots as baselines, then diff against them to measure optimization impact:
-
-```
-save_baseline → [make changes] → re-profile → diff_profile
-```
-
-Diffs report per-function regressions and improvements across all cost dimensions. Normalization handles profiles of different total duration.
 
 ### Exporters
 
@@ -115,7 +124,7 @@ Everything normalizes into a single `Profile`:
 ```bash
 npm run build          # TypeScript compilation
 npm run dev            # Watch mode
-npm run test           # 293 tests across 35 suites
+npm run test           # 337 tests across 41 suites
 npm run lint           # ESLint strict-type-checked
 npm run inspect        # Build + open MCP Inspector
 ```
@@ -127,9 +136,9 @@ src/
   model/         Profile, Frame, Span, Sample, Marker, ProfileBuilder, FrameTable
   instrument/    trace and mark tool handlers
   analysis/      profile_summary, hotspots, hotpaths, bottleneck, explain_span, etc.
-  importers/     pprof, collapsed, chrome-trace, gecko, v8-cpuprofile, nsight-sqlite, claude-transcript
+  importers/     pprof, collapsed, chrome-trace, gecko, v8-cpuprofile, nsight-sqlite, xctrace, claude-transcript
   exporters/     collapsed, speedscope, chrome-trace, baseline
-  patterns/      Anti-pattern detection (blind-edit, redundant-read, retry-loop)
+  patterns/      Anti-pattern detection (blind-edit, redundant-read, retry-loop, agent-sprawl, interrupted-tool, context-bloat)
   server.ts      MCP server setup and tool registration
 ```
 
