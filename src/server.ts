@@ -107,7 +107,7 @@ export function createServer(): McpServer {
         action: z.enum(['begin', 'end']),
         kind: z.string(),
         name: z.string().optional(),
-        cost: z.record(z.string(), z.number()).optional(),
+        cost: z.record(z.string(), z.coerce.number()).optional(),
         error: z.string().optional(),
         metadata: z.record(z.string(), z.unknown()).optional(),
       },
@@ -156,8 +156,8 @@ export function createServer(): McpServer {
         group_by: z.enum(['kind', 'turn', 'lane']).optional(),
         time_range: z
           .object({
-            start_ms: z.number(),
-            end_ms: z.number(),
+            start_ms: z.coerce.number(),
+            end_ms: z.coerce.number(),
           })
           .optional(),
       },
@@ -181,8 +181,8 @@ export function createServer(): McpServer {
       },
       inputSchema: {
         dimension: z.string(),
-        top_n: z.number().optional(),
-        min_value: z.number().optional(),
+        top_n: z.coerce.number().optional(),
+        min_value: z.coerce.number().optional(),
       },
     },
     (args) => {
@@ -226,8 +226,8 @@ export function createServer(): McpServer {
       inputSchema: {
         time_range: z
           .object({
-            start_ms: z.number(),
-            end_ms: z.number(),
+            start_ms: z.coerce.number(),
+            end_ms: z.coerce.number(),
           })
           .optional(),
       },
@@ -265,10 +265,10 @@ export function createServer(): McpServer {
           'Set to true if you want to see how slow the human is.',
         ),
         nsight_options: z.object({
-          max_kernels: z.number().optional(),
+          max_kernels: z.coerce.number().optional(),
           time_range: z.object({
-            start_ns: z.number(),
-            end_ns: z.number(),
+            start_ns: z.coerce.number(),
+            end_ns: z.coerce.number(),
           }).optional(),
         }).optional(),
       },
@@ -425,7 +425,7 @@ export function createServer(): McpServer {
         idempotentHint: true,
         openWorldHint: false,
       },
-      inputSchema: { dimension: z.string(), top_n: z.number().optional() },
+      inputSchema: { dimension: z.string(), top_n: z.coerce.number().optional() },
     },
     (args) => {
       const result = findHotpaths(state.builder.profile, args);
@@ -443,7 +443,7 @@ export function createServer(): McpServer {
         idempotentHint: true,
         openWorldHint: false,
       },
-      inputSchema: { dimension: z.string(), top_n: z.number().optional() },
+      inputSchema: { dimension: z.string(), top_n: z.coerce.number().optional() },
     },
     (args) => {
       const result = findBottlenecks(state.builder.profile, args);
@@ -461,7 +461,7 @@ export function createServer(): McpServer {
         idempotentHint: true,
         openWorldHint: false,
       },
-      inputSchema: { min_wall_ms: z.number().optional() },
+      inputSchema: { min_wall_ms: z.coerce.number().optional() },
     },
     (args) => {
       const result = findSpinpaths(state.builder.profile, args);
@@ -479,7 +479,7 @@ export function createServer(): McpServer {
         idempotentHint: true,
         openWorldHint: false,
       },
-      inputSchema: { min_idle_pct: z.number().optional() },
+      inputSchema: { min_idle_pct: z.coerce.number().optional() },
     },
     (args) => {
       const result = findStarvations(state.builder.profile, args);
@@ -501,7 +501,7 @@ export function createServer(): McpServer {
       inputSchema: {
         function_name: z.string().describe('Function name to focus on (exact or substring match)'),
         dimension: z.string().optional().describe('Cost dimension to rank by (default: first value type)'),
-        top_n: z.number().optional().describe('Max callers/callees to return (default: 10)'),
+        top_n: z.coerce.number().optional().describe('Max callers/callees to return (default: 10)'),
       },
     },
     (args) => {
@@ -660,7 +660,7 @@ export function createServer(): McpServer {
       inputSchema: {
         baseline: z.string().describe('Path to a .baseline.json file, or baseline name to resolve from .tracemeld/baselines/'),
         dimension: z.string().optional().describe('Primary dimension to rank diffs by. Default: first value type.'),
-        min_delta_pct: z.number().optional().describe('Minimum percentage change to report. Default: 5.'),
+        min_delta_pct: z.coerce.number().optional().describe('Minimum percentage change to report. Default: 5.'),
         normalize: z.boolean().optional().describe('Normalize totals before comparison. Default: true.'),
         dimension_map: z.record(z.string(), z.string()).optional().describe(
           'Map dimension keys across profiles, e.g. {"weight":"wall_ms"}. ' +
