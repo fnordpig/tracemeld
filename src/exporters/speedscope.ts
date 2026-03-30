@@ -143,11 +143,15 @@ export function exportSpeedscope(profile: Profile, options?: SpeedscopeExportOpt
         }
 
         if (samples.length > 0) {
-          const timestamps = lane.samples
-            .map((s) => s.timestamp)
-            .filter((t): t is number => t !== null);
-          const startValue = timestamps.length > 0 ? Math.min(...timestamps) : 0;
-          const endValue = timestamps.length > 0 ? Math.max(...timestamps) : 0;
+          let startValue = Infinity;
+          let endValue = 0;
+          for (const s of lane.samples) {
+            if (s.timestamp != null) {
+              if (s.timestamp < startValue) startValue = s.timestamp;
+              if (s.timestamp > endValue) endValue = s.timestamp;
+            }
+          }
+          if (startValue === Infinity) startValue = 0;
 
           profiles.push({
             type: 'sampled',

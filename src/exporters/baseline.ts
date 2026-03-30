@@ -36,11 +36,14 @@ export function exportBaseline(
   const vtLen = profile.value_types.length;
 
   // 1. Compute headline totals using self-cost (avoids double-counting)
+  // Cache self-cost per span — reused in kind breakdown and frame costs.
+  const selfCostCache = new Map<string, number[]>();
   const totalValues = new Array<number>(vtLen).fill(0);
   let errorCount = 0;
 
   for (const span of spans) {
     const selfCost = computeSelfCost(profile, span, spanIndex);
+    selfCostCache.set(span.id, selfCost);
     for (let i = 0; i < vtLen; i++) {
       totalValues[i] += selfCost[i] ?? 0;
     }
@@ -71,8 +74,7 @@ export function exportBaseline(
       entry = { values: new Array<number>(vtLen).fill(0), spanCount: 0, errorCount: 0 };
       kindMap.set(kind, entry);
     }
-    // Use span.values (total cost) for kind breakdown to match the spec's "aggregate totals"
-    const selfCost = computeSelfCost(profile, span, spanIndex);
+    const selfCost = selfCostCache.get(span.id) ?? computeSelfCost(profile, span, spanIndex);
     for (let i = 0; i < vtLen; i++) {
       entry.values[i] += selfCost[i] ?? 0;
     }
@@ -112,7 +114,7 @@ export function exportBaseline(
       };
       costMap.set(stackKey, entry);
     }
-    const selfCost = computeSelfCost(profile, span, spanIndex);
+    const selfCost = selfCostCache.get(span.id) ?? computeSelfCost(profile, span, spanIndex);
     for (let i = 0; i < vtLen; i++) {
       entry.selfCost[i] += selfCost[i] ?? 0;
       entry.totalCost[i] += span.values[i] ?? 0;

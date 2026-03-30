@@ -7,6 +7,7 @@ export class ProfileBuilder {
   readonly profile: Profile;
   readonly frameTable: FrameTable;
   private _valueTypeIndex: Map<string, number>;
+  private _laneIndex: Map<string, Lane> = new Map();
 
   constructor(name: string, valueTypes?: ValueType[]) {
     const vt = valueTypes ?? [...LLM_VALUE_TYPES];
@@ -42,11 +43,12 @@ export class ProfileBuilder {
       markers: [],
     };
     this.profile.lanes.push(lane);
+    this._laneIndex.set(id, lane);
     return lane;
   }
 
   getLane(id: string): Lane | undefined {
-    return this.profile.lanes.find((l) => l.id === id);
+    return this._laneIndex.get(id);
   }
 
   addSpan(laneId: string, span: Span): Span {

@@ -4,7 +4,7 @@ import type { PatternDetector, PatternMatch } from './types.js';
 
 export class PatternRegistry {
   private detectors: PatternDetector[] = [];
-  private cache: { profileId: string; matches: PatternMatch[] } | null = null;
+  private cache: { profileId: string; matches: PatternMatch[]; bySpan: Map<string, PatternMatch[]> } | null = null;
 
   register(detector: PatternDetector): void {
     this.detectors.push(detector);
@@ -21,13 +21,26 @@ export class PatternRegistry {
       matches.push(...detector(profile));
     }
 
-    this.cache = { profileId: profile.id, matches };
+    // Build span→matches index for O(1) lookups
+    const bySpan = new Map<string, PatternMatch[]>();
+    for (const match of matches) {
+      for (const spanId of match.span_ids) {
+        let list = bySpan.get(spanId);
+        if (!list) {
+          list = [];
+          bySpan.set(spanId, list);
+        }
+        list.push(match);
+      }
+    }
+
+    this.cache = { profileId: profile.id, matches, bySpan };
     return matches;
   }
 
   getMatchesForSpan(profile: Profile, spanId: string): PatternMatch[] {
-    const all = this.detect(profile);
-    return all.filter((m) => m.span_ids.includes(spanId));
+    this.detect(profile); // ensure cache is populated
+    return this.cache?.bySpan.get(spanId) ?? [];
   }
 
   invalidate(): void {

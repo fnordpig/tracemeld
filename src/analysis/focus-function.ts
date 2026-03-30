@@ -188,19 +188,30 @@ export function focusFunction(
 }
 
 /** Get inclusive cost for a span: its own values, or sum of children if values are all zero. */
-function computeInclusiveCost(profile: Profile, span: Span, index: Map<string, Span>): number[] {
+function computeInclusiveCost(
+  profile: Profile,
+  span: Span,
+  index: Map<string, Span>,
+  memo: Map<string, number[]> = new Map(),
+): number[] {
+  const cached = memo.get(span.id);
+  if (cached) return cached;
   const hasOwnCost = span.values.some((v) => v > 0);
-  if (hasOwnCost) return span.values;
+  if (hasOwnCost) {
+    memo.set(span.id, span.values);
+    return span.values;
+  }
   // Wrapper span with no explicit cost — sum children
   const total = new Array<number>(profile.value_types.length).fill(0);
   for (const childId of span.children) {
     const child = getSpanById(profile, childId, index);
     if (!child) continue;
-    const childCost = computeInclusiveCost(profile, child, index);
+    const childCost = computeInclusiveCost(profile, child, index, memo);
     for (let i = 0; i < total.length; i++) {
       total[i] += childCost[i] ?? 0;
     }
   }
+  memo.set(span.id, total);
   return total;
 }
 

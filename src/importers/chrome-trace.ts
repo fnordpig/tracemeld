@@ -135,10 +135,15 @@ export function importChromeTrace(content: string, name: string): ImportedProfil
             const endMs = (event.ts ?? 0) / 1000;
             openSpan.end_time = endMs;
             openSpan.values = [endMs - openSpan.start_time];
-            // Pop from nesting stack — find and remove this span
-            const nestIdx = entry.nestingStack.lastIndexOf(openSpan);
-            if (nestIdx !== -1) {
-              entry.nestingStack.splice(nestIdx, 1);
+            // Pop from nesting stack — fast path for well-formed traces (LIFO order)
+            const nestLen = entry.nestingStack.length;
+            if (nestLen > 0 && entry.nestingStack[nestLen - 1] === openSpan) {
+              entry.nestingStack.pop();
+            } else {
+              const nestIdx = entry.nestingStack.lastIndexOf(openSpan);
+              if (nestIdx !== -1) {
+                entry.nestingStack.splice(nestIdx, 1);
+              }
             }
           }
           if (stack.length === 0) {

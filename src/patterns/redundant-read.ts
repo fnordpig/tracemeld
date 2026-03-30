@@ -1,11 +1,12 @@
 // src/patterns/redundant-read.ts
 import type { Frame, Profile, Span } from '../model/types.js';
 import type { PatternMatch } from './types.js';
-import { getAllSpans, extractKind, valuesToRecord } from '../analysis/query.js';
+import { getAllSpans, buildSpanIndex, extractKind, valuesToRecord } from '../analysis/query.js';
 
 export function detectRedundantRead(profile: Profile): PatternMatch[] {
   const matches: PatternMatch[] = [];
   const allSpans = getAllSpans(profile);
+  const spanIndex = buildSpanIndex(profile);
 
   // Find turn spans using extractKind
   const turnSpans = allSpans.filter((s) => {
@@ -15,7 +16,7 @@ export function detectRedundantRead(profile: Profile): PatternMatch[] {
 
   // If no turns, treat all spans as one group
   const groups = turnSpans.length > 0
-    ? turnSpans.map((t) => getDescendantsInOrder(t, allSpans))
+    ? turnSpans.map((t) => getDescendantsInOrder(t, spanIndex))
     : [allSpans.sort((a, b) => a.start_time - b.start_time)];
 
   for (const descendants of groups) {
@@ -67,13 +68,13 @@ export function detectRedundantRead(profile: Profile): PatternMatch[] {
 }
 
 /** Walk the full subtree of a span, returning all descendants sorted by start_time. */
-function getDescendantsInOrder(parent: Span, allSpans: Span[]): Span[] {
+function getDescendantsInOrder(parent: Span, spanIndex: Map<string, Span>): Span[] {
   const result: Span[] = [];
   const stack = [...parent.children];
   while (stack.length > 0) {
     const id = stack.pop();
     if (!id) continue;
-    const span = allSpans.find((s) => s.id === id);
+    const span = spanIndex.get(id);
     if (!span) continue;
     result.push(span);
     stack.push(...span.children);

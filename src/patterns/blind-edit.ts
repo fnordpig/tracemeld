@@ -1,11 +1,12 @@
 // src/patterns/blind-edit.ts
 import type { Frame, Profile, Span } from '../model/types.js';
 import type { PatternMatch } from './types.js';
-import { getAllSpans, extractKind } from '../analysis/query.js';
+import { getAllSpans, buildSpanIndex, extractKind } from '../analysis/query.js';
 
 export function detectBlindEdit(profile: Profile): PatternMatch[] {
   const matches: PatternMatch[] = [];
   const allSpans = getAllSpans(profile);
+  const spanIndex = buildSpanIndex(profile);
 
   // Find turn spans in order using extractKind
   const turnSpans = allSpans
@@ -20,7 +21,7 @@ export function detectBlindEdit(profile: Profile): PatternMatch[] {
 
   for (const turn of turnSpans) {
     const filesRead = new Set<string>();
-    collectFileOpsDeep(profile, turn, allSpans, 'file_read', filesRead);
+    collectFileOpsDeep(profile, turn, spanIndex, 'file_read', filesRead);
     filesReadByTurn.set(turn.id, filesRead);
   }
 
@@ -35,7 +36,7 @@ export function detectBlindEdit(profile: Profile): PatternMatch[] {
     const allReads = new Set([...currentReads, ...prevReads]);
 
     // Find file_write spans in this turn's subtree
-    const writeSpans = getFileWriteSpansDeep(profile, turn, allSpans);
+    const writeSpans = getFileWriteSpansDeep(profile, turn, spanIndex);
 
     for (const writeSpan of writeSpans) {
       const frameName =
@@ -95,7 +96,7 @@ export function detectBlindEdit(profile: Profile): PatternMatch[] {
 function collectFileOpsDeep(
   profile: Profile,
   parent: Span,
-  allSpans: Span[],
+  spanIndex: Map<string, Span>,
   kindPrefix: string,
   result: Set<string>,
 ): void {
@@ -103,7 +104,7 @@ function collectFileOpsDeep(
   while (stack.length > 0) {
     const id = stack.pop();
     if (!id) continue;
-    const span = allSpans.find((s) => s.id === id);
+    const span = spanIndex.get(id);
     if (!span) continue;
     const frameName =
       (profile.frames[span.frame_index] as Frame | undefined)?.name ?? '';
@@ -122,14 +123,14 @@ function collectFileOpsDeep(
 function getFileWriteSpansDeep(
   profile: Profile,
   parent: Span,
-  allSpans: Span[],
+  spanIndex: Map<string, Span>,
 ): Span[] {
   const writes: Span[] = [];
   const stack = [...parent.children];
   while (stack.length > 0) {
     const id = stack.pop();
     if (!id) continue;
-    const span = allSpans.find((s) => s.id === id);
+    const span = spanIndex.get(id);
     if (!span) continue;
     const frameName =
       (profile.frames[span.frame_index] as Frame | undefined)?.name ?? '';

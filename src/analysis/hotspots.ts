@@ -57,7 +57,7 @@ export function findHotspots(
     let rankValue: number;
 
     if (isErrors) {
-      rankValue = countSubtreeErrors(span, spans);
+      rankValue = countSubtreeErrors(span, spanIndex);
     } else if (dimIndex >= 0) {
       rankValue = selfCost[dimIndex] ?? 0;
     } else {
@@ -158,11 +158,11 @@ export function findHotspots(
   return { dimension: dim, entries: entries.slice(0, topN) };
 }
 
-function countSubtreeErrors(span: Span, allSpans: Span[]): number {
+function countSubtreeErrors(span: Span, spanIndex: Map<string, Span>): number {
   let count = span.error ? 1 : 0;
   for (const childId of span.children) {
-    const child = allSpans.find((s) => s.id === childId);
-    if (child) count += countSubtreeErrors(child, allSpans);
+    const child = spanIndex.get(childId);
+    if (child) count += countSubtreeErrors(child, spanIndex);
   }
   return count;
 }

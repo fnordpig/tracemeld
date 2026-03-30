@@ -36,9 +36,14 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
 
   const allSpans = getAllSpans(profile);
   const spanIndex = buildSpanIndex(profile);
+
+  // Compute self-cost once per span, cache for reuse
+  const selfCostCache = new Map<string, number[]>();
   let totalCost = 0;
   for (const span of allSpans) {
-    totalCost += (computeSelfCost(profile, span, spanIndex)[dimIndex] ?? 0);
+    const selfCost = computeSelfCost(profile, span, spanIndex);
+    selfCostCache.set(span.id, selfCost);
+    totalCost += (selfCost[dimIndex] ?? 0);
   }
 
   // Include sample self-cost in totalCost
@@ -51,7 +56,7 @@ export function findBottlenecks(profile: Profile, input: BottleneckInput): Bottl
 
   const entries: BottleneckEntry[] = [];
   for (const span of allSpans) {
-    const selfCost = computeSelfCost(profile, span, spanIndex);
+    const selfCost = selfCostCache.get(span.id) ?? computeSelfCost(profile, span, spanIndex);
     const selfVal = selfCost[dimIndex] ?? 0;
     if (selfVal <= 0) continue;
 

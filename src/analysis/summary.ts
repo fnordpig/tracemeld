@@ -48,11 +48,14 @@ export function profileSummary(
   const spanIndex = buildSpanIndex(profile);
 
   // Compute totals using self-cost to avoid double-counting parent+child values.
+  // Cache self-cost per span to avoid recomputing in the grouping pass.
+  const selfCostCache = new Map<string, number[]>();
   const totalValues = new Array<number>(profile.value_types.length).fill(0);
   let errorCount = 0;
 
   for (const span of spans) {
     const selfCost = computeSelfCost(profile, span, spanIndex);
+    selfCostCache.set(span.id, selfCost);
     for (let i = 0; i < totalValues.length; i++) {
       totalValues[i] += selfCost[i] ?? 0;
     }
@@ -72,11 +75,22 @@ export function profileSummary(
 
   const totals = valuesToRecord(profile, totalValues);
 
+  // Build span→lane map for O(1) lane grouping
+  let spanToLane: Map<string, string> | undefined;
+  if (groupBy === 'lane') {
+    spanToLane = new Map();
+    for (const lane of profile.lanes) {
+      for (const span of lane.spans) {
+        spanToLane.set(span.id, lane.name);
+      }
+    }
+  }
+
   // Group spans
   const groups = new Map<string, { values: number[]; spanCount: number; errorCount: number }>();
 
   for (const span of spans) {
-    const key = getGroupKey(profile, span, groupBy, spanIndex);
+    const key = getGroupKey(profile, span, groupBy, spanIndex, spanToLane);
     let group = groups.get(key);
     if (!group) {
       group = {
@@ -86,7 +100,7 @@ export function profileSummary(
       };
       groups.set(key, group);
     }
-    const spanSelfCost = computeSelfCost(profile, span, spanIndex);
+    const spanSelfCost = selfCostCache.get(span.id) ?? computeSelfCost(profile, span, spanIndex);
     for (let i = 0; i < group.values.length; i++) {
       group.values[i] += spanSelfCost[i] ?? 0;
     }
@@ -193,6 +207,7 @@ function getGroupKey(
   span: Span,
   groupBy: string,
   index?: Map<string, Span>,
+  spanToLane?: Map<string, string>,
 ): string {
   const frameName = (profile.frames[span.frame_index] as Frame | undefined)?.name ?? '<unknown>';
   switch (groupBy) {
@@ -209,10 +224,7 @@ function getGroupKey(
       return 'no-turn';
     }
     case 'lane': {
-      for (const lane of profile.lanes) {
-        if (lane.spans.some((s) => s.id === span.id)) return lane.name;
-      }
-      return 'unknown';
+      return spanToLane?.get(span.id) ?? 'unknown';
     }
     default:
       return extractKind(frameName);
