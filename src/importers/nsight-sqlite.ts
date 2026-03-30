@@ -94,6 +94,7 @@ export async function importNsightSqlite(
     const frameTable = new FrameTable();
     const lanesMap = new Map<string, Lane>();
     const correlationMap = new Map<number, string>(); // correlationId → spanId
+    const spanIndex = new Map<string, Span>(); // spanId → Span (for O(1) parent lookup)
     let spanIdCounter = 0;
 
     function nextSpanId(): string {
@@ -138,6 +139,7 @@ export async function importNsightSqlite(
             children: [],
           };
           lane.spans.push(span);
+          spanIndex.set(spanId, span);
           correlationMap.set(correlationId, spanId);
         }
       }
@@ -234,12 +236,9 @@ export async function importNsightSqlite(
 
           // Link to parent runtime span
           if (parentSpanId) {
-            const runtimeLane = lanesMap.get('cuda-runtime');
-            if (runtimeLane) {
-              const parentSpan = runtimeLane.spans.find((s) => s.id === parentSpanId);
-              if (parentSpan) {
-                parentSpan.children.push(spanId);
-              }
+            const parentSpan = spanIndex.get(parentSpanId);
+            if (parentSpan) {
+              parentSpan.children.push(spanId);
             }
           }
 
@@ -291,12 +290,9 @@ export async function importNsightSqlite(
           lane.spans.push(span);
 
           if (parentSpanId) {
-            const runtimeLane = lanesMap.get('cuda-runtime');
-            if (runtimeLane) {
-              const parentSpan = runtimeLane.spans.find((s) => s.id === parentSpanId);
-              if (parentSpan) {
-                parentSpan.children.push(spanId);
-              }
+            const parentSpan = spanIndex.get(parentSpanId);
+            if (parentSpan) {
+              parentSpan.children.push(spanId);
             }
           }
         }
@@ -343,12 +339,9 @@ export async function importNsightSqlite(
           lane.spans.push(span);
 
           if (parentSpanId) {
-            const runtimeLane = lanesMap.get('cuda-runtime');
-            if (runtimeLane) {
-              const parentSpan = runtimeLane.spans.find((s) => s.id === parentSpanId);
-              if (parentSpan) {
-                parentSpan.children.push(spanId);
-              }
+            const parentSpan = spanIndex.get(parentSpanId);
+            if (parentSpan) {
+              parentSpan.children.push(spanId);
             }
           }
         }
